@@ -1,48 +1,83 @@
-name: job-template
-description: Template for SGNL JavaScript jobs - replace with your job description
+name: ad-update-user
+description: Update user attributes in on-premise Active Directory via LDAP
 
-# Input parameters for web form generation
 inputs:
-  target:
+  userDN:
     type: text
-    description: Target resource identifier (e.g., user email, group ID)
+    description: Distinguished Name of the user to update (e.g., CN=John Doe,OU=Users,DC=example,DC=com)
     required: true
-    validation:
-      min: 1
-      max: 100
 
-  action:
+  attributes:
+    type: object
+    description: Object containing attribute names and values to update
+    required: false
+
+  samAccountName:
     type: text
-    description: Action to perform on the target resource
-    required: true
-    validation:
-      min: 1
-      max: 50
-
-  options:
-    type: array
-    description: Additional options for the operation
+    description: SAM account name (maps to sAMAccountName)
     required: false
-    item_type: text
-    validation:
-      max: 10
 
-  dry_run:
-    type: boolean
-    description: Preview changes without executing them
+  firstName:
+    type: text
+    description: First name (maps to givenName)
     required: false
-    default: false
 
-# Expected output structure
+  lastName:
+    type: text
+    description: Last name (maps to sn)
+    required: false
+
+  displayName:
+    type: text
+    description: Display name (maps to displayName)
+    required: false
+
+  email:
+    type: text
+    description: Email address (maps to mail)
+    required: false
+
+  company:
+    type: text
+    description: Company name (maps to company)
+    required: false
+
+  department:
+    type: text
+    description: Department name (maps to department)
+    required: false
+
+  title:
+    type: text
+    description: Job title (maps to title)
+    required: false
+
+  address:
+    type: text
+    description: Optional LDAP/LDAPS URL override (e.g., ldaps://dc.example.com:636)
+    required: false
+
 outputs:
   status:
     type: text
-    description: Operation result (success, failed, recovered, etc.)
+    description: Operation result (success, halted)
 
-  target:
+  userDN:
     type: text
-    description: The target resource that was processed
+    description: Distinguished Name of the updated user
 
-  processed_at:
-    type: datetime
-    description: When the operation completed (ISO 8601)
+  modified:
+    type: boolean
+    description: Whether the user attributes were modified
+
+  attributes:
+    type: array
+    description: List of attribute names that were updated
+
+  address:
+    type: text
+    description: LDAP server address used
+
+  message:
+    type: text
+    description: Additional status message or error details

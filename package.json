@@ -1,7 +1,7 @@
 {
-  "name": "@sgnl/job-template",
+  "name": "@sgnl-actions/ad-update-user",
   "version": "1.0.0",
-  "description": "Template for SGNL JavaScript jobs",
+  "description": "Update user attributes in on-premise Active Directory",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
@@ -17,13 +17,20 @@
   },
   "keywords": [
     "sgnl",
-    "job",
-    "template",
+    "active-directory",
+    "ad",
+    "ldap",
+    "user",
+    "update",
     "identity",
     "security"
   ],
   "author": "SGNL Engineering",
   "license": "MIT",
+  "dependencies": {
+    "@sgnl-actions/utils": "github:sgnl-actions/utils#v1.0.5",
+    "ldapts": "^7.3.0"
+  },
   "devDependencies": {
     "@eslint/js": "^9.17.0",
     "@rollup/plugin-commonjs": "^28.0.1",

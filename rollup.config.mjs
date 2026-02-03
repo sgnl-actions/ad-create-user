@@ -16,6 +16,9 @@ export default {
   ],
   external: [
     // Node.js built-ins
-    'fs', 'path', 'url', 'util', 'crypto', 'https', 'http'
+    'fs', 'path', 'url', 'util', 'crypto', 'https', 'http',
+    'net', 'tls', 'events', 'assert', 'buffer', 'stream', 'dns', 'os', 'string_decoder',
+    // Dependencies
+    'ldapts'
   ]
 };
