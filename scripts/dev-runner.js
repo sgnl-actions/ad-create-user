@@ -21,11 +21,13 @@ const mockContext = {
 
 const mockParams = {
   userDN: 'CN=John Doe,OU=Users,DC=example,DC=com',
+  samAccountName: 'jdoe',
   firstName: 'John',
   lastName: 'Doe',
   email: 'john.doe@example.com',
   department: 'Engineering',
   title: 'Software Engineer',
+  enabled: true,
   attributes: {
     telephoneNumber: '+1-555-0100',
   },

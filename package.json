@@ -1,7 +1,7 @@
 {
-  "name": "@sgnl-actions/ad-update-user",
+  "name": "@sgnl-actions/ad-create-user",
   "version": "1.0.0",
-  "description": "Update user attributes in on-premise Active Directory",
+  "description": "Create a new user in on-premise Active Directory",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
@@ -21,7 +21,7 @@
     "ad",
     "ldap",
     "user",
-    "update",
+    "create",
     "identity",
     "security"
   ],

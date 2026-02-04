@@ -30,8 +30,13 @@ function getBaseURL(params, context) {
   return address.endsWith('/') ? address.slice(0, -1) : address;
 }
 
+const AD_USER_OBJECT_CLASS = ['top', 'person', 'organizationalPerson', 'user'];
+const UAC_ENABLED = '512';
+const UAC_DISABLED = '514';
+
 const PARAM_TO_LDAP = {
   samAccountName: 'sAMAccountName',
+  userPrincipalName: 'userPrincipalName',
   firstName: 'givenName',
   lastName: 'sn',
   displayName: 'displayName',
@@ -41,8 +46,21 @@ const PARAM_TO_LDAP = {
   title: 'title'
 };
 
+function extractCN(dn) {
+  const match = dn.match(/^CN=([^,]+)/i);
+  if (!match) {
+    throw new Error('userDN must start with CN= (e.g., CN=John Doe,OU=Users,DC=example,DC=com)');
+  }
+  return match[1];
+}
+
+function encodePassword(password) {
+  const quoted = `"${password}"`;
+  return Buffer.from(quoted, 'utf16le');
+}
+
 function buildAttributes(params) {
-  const merged = { ...(params.attributes || {}) };
+  const merged = { ...(params.additionalAttributes || {}) };
   for (const [param, ldapName] of Object.entries(PARAM_TO_LDAP)) {
     if (params[param] !== undefined) {
       merged[ldapName] = params[param];
@@ -51,15 +69,8 @@ function buildAttributes(params) {
   return merged;
 }
 
-async function updateUserAttributes(userDN, attributes, client) {
-  const changes = Object.entries(attributes).map(([key, value]) => ({
-    operation: 'replace',
-    modification: {
-      [key]: Array.isArray(value) ? value : [value]
-    }
-  }));
-
-  await client.modify(userDN, changes);
+async function createUser(userDN, entry, client) {
+  await client.add(userDN, entry);
 }
 
 var script = {
@@ -67,8 +78,25 @@ var script = {
     const { userDN } = params;
     const attributes = buildAttributes(params);
 
-    if (!attributes || typeof attributes !== 'object' || Object.keys(attributes).length === 0) {
-      throw new Error('At least one attribute must be provided');
+    if (!attributes.sAMAccountName) {
+      throw new Error('samAccountName is required to create an AD user');
+    }
+
+    const cn = extractCN(userDN);
+
+    const entry = {
+      objectClass: AD_USER_OBJECT_CLASS,
+      cn,
+      ...attributes,
+      userAccountControl: params.enabled === true ? UAC_ENABLED : UAC_DISABLED
+    };
+
+    if (params.password) {
+      entry.unicodePwd = encodePassword(params.password);
+    }
+
+    if (params.changePasswordAtNextLogin) {
+      entry.pwdLastSet = '0';
     }
 
     const address = getBaseURL(params, context);
@@ -94,12 +122,12 @@ var script = {
 
     try {
       await client.bind(username, password);
-      await updateUserAttributes(userDN, attributes, client);
+      await createUser(userDN, entry, client);
 
       return {
         status: 'success',
         userDN,
-        modified: true,
+        created: true,
         attributes: Object.keys(attributes),
         address
       };
@@ -110,7 +138,7 @@ var script = {
 
   error: async (params, _context) => {
     const { error, userDN } = params;
-    console.error(`Error updating user ${userDN}: ${error.message}`);
+    console.error(`Error creating user ${userDN}: ${error.message}`);
     throw error;
   },
 

@@ -1,31 +1,31 @@
-name: ad-update-user
-description: Update user attributes in on-premise Active Directory via LDAP
+name: ad-create-user
+description: Create a new user in on-premise Active Directory via LDAP
 
 inputs:
   userDN:
     type: text
-    description: Distinguished Name of the user to update (e.g., CN=John Doe,OU=Users,DC=example,DC=com)
+    description: Distinguished Name for the new user to create (e.g., CN=John Doe,OU=Users,DC=example,DC=com)
     required: true
-
-  attributes:
-    type: object
-    description: Object containing attribute names and values to update
-    required: false
 
   samAccountName:
     type: text
     description: SAM account name (maps to sAMAccountName)
-    required: false
+    required: true
+
+  userPrincipalName:
+    type: text
+    description: User Principal Name (maps to userPrincipalName, e.g., user@example.com)
+    required: true
 
   firstName:
     type: text
     description: First name (maps to givenName)
-    required: false
+    required: true
 
   lastName:
     type: text
     description: Last name (maps to sn)
-    required: false
+    required: true
 
   displayName:
     type: text
@@ -57,6 +57,26 @@ inputs:
     description: Optional LDAP/LDAPS URL override (e.g., ldaps://dc.example.com:636)
     required: false
 
+  enabled:
+    type: boolean
+    description: Whether the account should be enabled (default false; sets userAccountControl to 512 or 514)
+    required: false
+
+  password:
+    type: text
+    description: Initial password for the new user (encoded as unicodePwd; requires LDAPS)
+    required: false
+
+  changePasswordAtNextLogin:
+    type: boolean
+    description: Whether the user must change their password at next login (default false; sets pwdLastSet to 0)
+    required: false
+
+  additionalAttributes:
+    type: object
+    description: Object containing additional LDAP attribute names and values to set on the new user
+    required: false
+
 outputs:
   status:
     type: text
@@ -64,15 +84,15 @@ outputs:
 
   userDN:
     type: text
-    description: Distinguished Name of the updated user
+    description: Distinguished Name of the created user
 
-  modified:
+  created:
     type: boolean
-    description: Whether the user attributes were modified
+    description: Whether the user was created
 
   attributes:
     type: array
-    description: List of attribute names that were updated
+    description: List of user-supplied attribute names that were set
 
   address:
     type: text

@@ -2,13 +2,13 @@ import { jest, describe, test, expect, beforeEach } from '@jest/globals';
 
 const mockBind = jest.fn();
 const mockUnbind = jest.fn();
-const mockModify = jest.fn();
+const mockAdd = jest.fn();
 
 jest.unstable_mockModule('ldapts', () => ({
   Client: jest.fn().mockImplementation(() => ({
     bind: mockBind,
     unbind: mockUnbind,
-    modify: mockModify
+    add: mockAdd
   }))
 }));
 
@@ -21,7 +21,7 @@ jest.unstable_mockModule('@sgnl-actions/utils', () => ({
 const { default: script } = await import('../src/script.mjs');
 const { Client } = await import('ldapts');
 
-describe('AD Update User Script', () => {
+describe('AD Create User Script', () => {
   const mockContext = {
     env: {
       ADDRESS: 'ldaps://dc.example.com:636'
@@ -37,115 +37,210 @@ describe('AD Update User Script', () => {
     jest.clearAllMocks();
     mockBind.mockResolvedValue(undefined);
     mockUnbind.mockResolvedValue(undefined);
-    mockModify.mockResolvedValue(undefined);
+    mockAdd.mockResolvedValue(undefined);
     mockGetBaseURL.mockReturnValue('ldaps://dc.example.com:636');
   });
 
   describe('invoke handler', () => {
-    test('should successfully update a single attribute', async () => {
+    test('should create user with required attributes', async () => {
       const params = {
         userDN: 'CN=John Doe,OU=Users,DC=example,DC=com',
-        attributes: { displayName: 'John Updated' }
+        samAccountName: 'jdoe'
       };
 
       const result = await script.invoke(params, mockContext);
 
       expect(result.status).toBe('success');
       expect(result.userDN).toBe('CN=John Doe,OU=Users,DC=example,DC=com');
-      expect(result.modified).toBe(true);
-      expect(result.attributes).toEqual(['displayName']);
-      expect(mockModify).toHaveBeenCalledWith(
+      expect(result.created).toBe(true);
+      expect(result.attributes).toEqual(['sAMAccountName']);
+      expect(mockAdd).toHaveBeenCalledWith(
         'CN=John Doe,OU=Users,DC=example,DC=com',
-        [
-          {
-            operation: 'replace',
-            modification: { displayName: ['John Updated'] }
-          }
-        ]
+        {
+          objectClass: ['top', 'person', 'organizationalPerson', 'user'],
+          cn: 'John Doe',
+          sAMAccountName: 'jdoe',
+          userAccountControl: '514'
+        }
       );
     });
 
-    test('should successfully update multiple attributes', async () => {
+    test('should create user with multiple attributes', async () => {
       const params = {
         userDN: 'CN=John Doe,OU=Users,DC=example,DC=com',
-        attributes: {
-          displayName: 'John Updated',
-          mail: 'john.updated@example.com',
-          department: 'Engineering'
-        }
+        samAccountName: 'jdoe',
+        firstName: 'John',
+        lastName: 'Doe',
+        email: 'john@example.com',
+        department: 'Engineering'
       };
 
       const result = await script.invoke(params, mockContext);
 
       expect(result.status).toBe('success');
-      expect(result.attributes).toEqual(['displayName', 'mail', 'department']);
-      expect(mockModify).toHaveBeenCalledWith(
+      expect(result.attributes).toEqual(expect.arrayContaining([
+        'sAMAccountName', 'givenName', 'sn', 'mail', 'department'
+      ]));
+      expect(mockAdd).toHaveBeenCalledWith(
         'CN=John Doe,OU=Users,DC=example,DC=com',
-        [
-          { operation: 'replace', modification: { displayName: ['John Updated'] } },
-          { operation: 'replace', modification: { mail: ['john.updated@example.com'] } },
-          { operation: 'replace', modification: { department: ['Engineering'] } }
-        ]
+        expect.objectContaining({
+          objectClass: ['top', 'person', 'organizationalPerson', 'user'],
+          cn: 'John Doe',
+          sAMAccountName: 'jdoe',
+          givenName: 'John',
+          sn: 'Doe',
+          mail: 'john@example.com',
+          department: 'Engineering',
+          userAccountControl: '514'
+        })
       );
     });
 
-    test('should throw on empty attributes object', async () => {
+    test('should throw when samAccountName is missing', async () => {
       const params = {
         userDN: 'CN=John Doe,OU=Users,DC=example,DC=com',
-        attributes: {}
+        firstName: 'John'
       };
 
       await expect(script.invoke(params, mockContext)).rejects.toThrow(
-        'At least one attribute must be provided'
+        'samAccountName is required to create an AD user'
       );
       expect(mockBind).not.toHaveBeenCalled();
     });
 
-    test('should throw on missing attributes', async () => {
+    test('should include objectClass automatically', async () => {
       const params = {
-        userDN: 'CN=John Doe,OU=Users,DC=example,DC=com'
+        userDN: 'CN=John Doe,OU=Users,DC=example,DC=com',
+        samAccountName: 'jdoe'
+      };
+
+      await script.invoke(params, mockContext);
+
+      expect(mockAdd).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          objectClass: ['top', 'person', 'organizationalPerson', 'user']
+        })
+      );
+    });
+
+    test('should extract cn from DN', async () => {
+      const params = {
+        userDN: 'CN=Jane Smith,OU=Users,DC=example,DC=com',
+        samAccountName: 'jsmith'
+      };
+
+      await script.invoke(params, mockContext);
+
+      expect(mockAdd).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ cn: 'Jane Smith' })
+      );
+    });
+
+    test('should throw if DN does not start with CN=', async () => {
+      const params = {
+        userDN: 'OU=Users,DC=example,DC=com',
+        samAccountName: 'jdoe'
       };
 
       await expect(script.invoke(params, mockContext)).rejects.toThrow(
-        'At least one attribute must be provided'
+        'userDN must start with CN='
       );
       expect(mockBind).not.toHaveBeenCalled();
     });
 
-    test('should propagate LDAP error code 32 (no such object)', async () => {
-      mockModify.mockRejectedValue(
-        Object.assign(new Error('No such object'), { code: 32 })
+    test('should create disabled account by default (UAC=514)', async () => {
+      const params = {
+        userDN: 'CN=John Doe,OU=Users,DC=example,DC=com',
+        samAccountName: 'jdoe'
+      };
+
+      await script.invoke(params, mockContext);
+
+      expect(mockAdd).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ userAccountControl: '514' })
+      );
+    });
+
+    test('should create enabled account when enabled is true (UAC=512)', async () => {
+      const params = {
+        userDN: 'CN=John Doe,OU=Users,DC=example,DC=com',
+        samAccountName: 'jdoe',
+        enabled: true
+      };
+
+      await script.invoke(params, mockContext);
+
+      expect(mockAdd).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ userAccountControl: '512' })
+      );
+    });
+
+    test('should encode and include password when provided', async () => {
+      const params = {
+        userDN: 'CN=John Doe,OU=Users,DC=example,DC=com',
+        samAccountName: 'jdoe',
+        password: 'P@ssw0rd!'
+      };
+
+      await script.invoke(params, mockContext);
+
+      const callArgs = mockAdd.mock.calls[0][1];
+      expect(callArgs.unicodePwd).toBeInstanceOf(Buffer);
+      const decoded = callArgs.unicodePwd.toString('utf16le');
+      expect(decoded).toBe('"P@ssw0rd!"');
+    });
+
+    test('should omit unicodePwd when no password provided', async () => {
+      const params = {
+        userDN: 'CN=John Doe,OU=Users,DC=example,DC=com',
+        samAccountName: 'jdoe'
+      };
+
+      await script.invoke(params, mockContext);
+
+      const callArgs = mockAdd.mock.calls[0][1];
+      expect(callArgs.unicodePwd).toBeUndefined();
+    });
+
+    test('should propagate LDAP error code 68 (entry already exists)', async () => {
+      mockAdd.mockRejectedValue(
+        Object.assign(new Error('Entry already exists'), { code: 68 })
       );
 
       const params = {
-        userDN: 'CN=Nonexistent,OU=Users,DC=example,DC=com',
-        attributes: { displayName: 'Test' }
+        userDN: 'CN=John Doe,OU=Users,DC=example,DC=com',
+        samAccountName: 'jdoe'
       };
 
-      await expect(script.invoke(params, mockContext)).rejects.toThrow('No such object');
+      await expect(script.invoke(params, mockContext)).rejects.toThrow('Entry already exists');
     });
 
     test('should propagate LDAP error code 19 (constraint violation)', async () => {
-      mockModify.mockRejectedValue(
+      mockAdd.mockRejectedValue(
         Object.assign(new Error('Constraint violation'), { code: 19 })
       );
 
       const params = {
         userDN: 'CN=John Doe,OU=Users,DC=example,DC=com',
-        attributes: { mail: 'invalid' }
+        samAccountName: 'jdoe'
       };
 
       await expect(script.invoke(params, mockContext)).rejects.toThrow('Constraint violation');
     });
 
     test('should propagate LDAP error code 17 (undefined attribute type)', async () => {
-      mockModify.mockRejectedValue(
+      mockAdd.mockRejectedValue(
         Object.assign(new Error('Undefined attribute type'), { code: 17 })
       );
 
       const params = {
         userDN: 'CN=John Doe,OU=Users,DC=example,DC=com',
-        attributes: { nonExistentAttr: 'value' }
+        samAccountName: 'jdoe',
+        additionalAttributes: { nonExistentAttr: 'value' }
       };
 
       await expect(script.invoke(params, mockContext)).rejects.toThrow('Undefined attribute type');
@@ -156,7 +251,7 @@ describe('AD Update User Script', () => {
 
       const params = {
         userDN: 'CN=John Doe,OU=Users,DC=example,DC=com',
-        attributes: { displayName: 'Test' }
+        samAccountName: 'jdoe'
       };
 
       await expect(script.invoke(params, mockContext)).rejects.toThrow('Bind failed: invalid credentials');
@@ -171,7 +266,7 @@ describe('AD Update User Script', () => {
 
       const params = {
         userDN: 'CN=John Doe,OU=Users,DC=example,DC=com',
-        attributes: { displayName: 'Test' }
+        samAccountName: 'jdoe'
       };
 
       await expect(script.invoke(params, context)).rejects.toThrow('BASIC_USERNAME secret is required');
@@ -185,7 +280,7 @@ describe('AD Update User Script', () => {
 
       const params = {
         userDN: 'CN=John Doe,OU=Users,DC=example,DC=com',
-        attributes: { displayName: 'Test' }
+        samAccountName: 'jdoe'
       };
 
       await expect(script.invoke(params, context)).rejects.toThrow('BASIC_PASSWORD secret is required');
@@ -199,7 +294,7 @@ describe('AD Update User Script', () => {
 
       const params = {
         userDN: 'CN=John Doe,OU=Users,DC=example,DC=com',
-        attributes: { displayName: 'Test' }
+        samAccountName: 'jdoe'
       };
 
       await script.invoke(params, context);
@@ -213,7 +308,7 @@ describe('AD Update User Script', () => {
     test('should leave tlsOptions empty when TLS_SKIP_VERIFY is not set', async () => {
       const params = {
         userDN: 'CN=John Doe,OU=Users,DC=example,DC=com',
-        attributes: { displayName: 'Test' }
+        samAccountName: 'jdoe'
       };
 
       await script.invoke(params, mockContext);
@@ -229,7 +324,7 @@ describe('AD Update User Script', () => {
 
       const params = {
         userDN: 'CN=John Doe,OU=Users,DC=example,DC=com',
-        attributes: { displayName: 'Test' },
+        samAccountName: 'jdoe',
         address: 'ldaps://override.example.com:636'
       };
 
@@ -241,7 +336,7 @@ describe('AD Update User Script', () => {
     test('should call getBaseURL with params and context', async () => {
       const params = {
         userDN: 'CN=John Doe,OU=Users,DC=example,DC=com',
-        attributes: { displayName: 'Test' }
+        samAccountName: 'jdoe'
       };
 
       await script.invoke(params, mockContext);
@@ -249,56 +344,31 @@ describe('AD Update User Script', () => {
       expect(mockGetBaseURL).toHaveBeenCalledWith(params, mockContext);
     });
 
-    test('should pass array attribute values through without double-wrapping', async () => {
+    test('should pass array attribute values through in entry', async () => {
       const params = {
         userDN: 'CN=John Doe,OU=Users,DC=example,DC=com',
-        attributes: {
+        samAccountName: 'jdoe',
+        additionalAttributes: {
           otherTelephone: ['+1-555-0100', '+1-555-0101']
         }
       };
 
       await script.invoke(params, mockContext);
 
-      expect(mockModify).toHaveBeenCalledWith(
+      expect(mockAdd).toHaveBeenCalledWith(
         'CN=John Doe,OU=Users,DC=example,DC=com',
-        [
-          {
-            operation: 'replace',
-            modification: { otherTelephone: ['+1-555-0100', '+1-555-0101'] }
-          }
-        ]
-      );
-    });
-  });
-
-  describe('named input parameters', () => {
-    test('should map named params to LDAP attribute names without attributes object', async () => {
-      const params = {
-        userDN: 'CN=John Doe,OU=Users,DC=example,DC=com',
-        firstName: 'John',
-        lastName: 'Doe',
-        email: 'john@example.com'
-      };
-
-      const result = await script.invoke(params, mockContext);
-
-      expect(result.status).toBe('success');
-      expect(result.attributes).toEqual(expect.arrayContaining(['givenName', 'sn', 'mail']));
-      expect(mockModify).toHaveBeenCalledWith(
-        'CN=John Doe,OU=Users,DC=example,DC=com',
-        expect.arrayContaining([
-          { operation: 'replace', modification: { givenName: ['John'] } },
-          { operation: 'replace', modification: { sn: ['Doe'] } },
-          { operation: 'replace', modification: { mail: ['john@example.com'] } }
-        ])
+        expect.objectContaining({
+          otherTelephone: ['+1-555-0100', '+1-555-0101']
+        })
       );
     });
 
-    test('should merge named params with attributes object', async () => {
+    test('should merge named params with additionalAttributes object', async () => {
       const params = {
         userDN: 'CN=John Doe,OU=Users,DC=example,DC=com',
+        samAccountName: 'jdoe',
         firstName: 'John',
-        attributes: {
+        additionalAttributes: {
           telephoneNumber: '+1-555-0100'
         }
       };
@@ -306,25 +376,28 @@ describe('AD Update User Script', () => {
       const result = await script.invoke(params, mockContext);
 
       expect(result.status).toBe('success');
-      expect(result.attributes).toEqual(expect.arrayContaining(['telephoneNumber', 'givenName']));
+      expect(result.attributes).toEqual(expect.arrayContaining([
+        'telephoneNumber', 'sAMAccountName', 'givenName'
+      ]));
     });
 
     test('should let named params override conflicting attributes keys', async () => {
       const params = {
         userDN: 'CN=John Doe,OU=Users,DC=example,DC=com',
+        samAccountName: 'jdoe',
         email: 'named@example.com',
-        attributes: {
+        additionalAttributes: {
           mail: 'attributes@example.com'
         }
       };
 
       await script.invoke(params, mockContext);
 
-      expect(mockModify).toHaveBeenCalledWith(
+      expect(mockAdd).toHaveBeenCalledWith(
         'CN=John Doe,OU=Users,DC=example,DC=com',
-        [
-          { operation: 'replace', modification: { mail: ['named@example.com'] } }
-        ]
+        expect.objectContaining({
+          mail: 'named@example.com'
+        })
       );
     });
 
@@ -349,32 +422,25 @@ describe('AD Update User Script', () => {
       ]));
     });
 
-    test('should throw when no named params and no attributes provided', async () => {
-      const params = {
-        userDN: 'CN=John Doe,OU=Users,DC=example,DC=com'
-      };
-
-      await expect(script.invoke(params, mockContext)).rejects.toThrow(
-        'At least one attribute must be provided'
-      );
-      expect(mockBind).not.toHaveBeenCalled();
-    });
-
-    test('should throw when empty attributes and no named params provided', async () => {
+    test('should return only user-supplied attributes in result (not objectClass/cn/UAC)', async () => {
       const params = {
         userDN: 'CN=John Doe,OU=Users,DC=example,DC=com',
-        attributes: {}
+        samAccountName: 'jdoe',
+        firstName: 'John'
       };
 
-      await expect(script.invoke(params, mockContext)).rejects.toThrow(
-        'At least one attribute must be provided'
-      );
-      expect(mockBind).not.toHaveBeenCalled();
+      const result = await script.invoke(params, mockContext);
+
+      expect(result.attributes).toEqual(expect.arrayContaining(['sAMAccountName', 'givenName']));
+      expect(result.attributes).not.toContain('objectClass');
+      expect(result.attributes).not.toContain('cn');
+      expect(result.attributes).not.toContain('userAccountControl');
     });
   });
 
   describe('error handler', () => {
     test('should re-throw error and log context', async () => {
+      const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
       const error = new Error('LDAP connection failed');
       const params = {
         userDN: 'CN=John Doe,OU=Users,DC=example,DC=com',
@@ -382,6 +448,10 @@ describe('AD Update User Script', () => {
       };
 
       await expect(script.error(params, mockContext)).rejects.toThrow('LDAP connection failed');
+      expect(consoleSpy).toHaveBeenCalledWith(
+        'Error creating user CN=John Doe,OU=Users,DC=example,DC=com: LDAP connection failed'
+      );
+      consoleSpy.mockRestore();
     });
   });
 

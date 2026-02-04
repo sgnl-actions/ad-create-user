@@ -1,18 +1,18 @@
-# Active Directory Update User Attributes Action
+# Active Directory Create User Action
 
-Update user attributes in on-premise Active Directory via LDAP/LDAPS.
+Create a new user in on-premise Active Directory via LDAP/LDAPS.
 
 ## Overview
 
-This action modifies user attributes in Active Directory using the LDAP `replace` operation via the `ldapts` library. The `replace` operation is inherently idempotent -- setting the same attribute to the same value multiple times produces no errors and no side effects.
+This action creates a new user object in Active Directory using the LDAP `add` operation via the `ldapts` library. It automatically sets the required AD object classes (`top`, `person`, `organizationalPerson`, `user`), extracts the `cn` from the provided DN, and configures the account state via `userAccountControl`.
 
-Supports updating any combination of standard AD user attributes in a single call. Scalar values are automatically wrapped in arrays as required by the LDAP protocol.
+Supports setting any combination of standard AD user attributes and an optional initial password in a single call.
 
 ## Prerequisites
 
 - Network access to an Active Directory Domain Controller (LDAP port 389 or LDAPS port 636)
-- A service account with **Write** permissions on the target user objects
-- The Distinguished Name (DN) of the user to update
+- A service account with permission to **create user objects** in the target OU
+- LDAPS is required if setting the initial password (`unicodePwd` attribute)
 
 ## Configuration
 
@@ -34,28 +34,30 @@ Supports updating any combination of standard AD user attributes in a single cal
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `userDN` | text | Yes | Distinguished Name of the user to update |
-| `attributes` | object | No | Key-value pairs of LDAP attributes to set |
-| `samAccountName` | text | No | SAM account name (maps to `sAMAccountName`) |
-| `firstName` | text | No | First name (maps to `givenName`) |
-| `lastName` | text | No | Last name (maps to `sn`) |
+| `userDN` | text | Yes | Distinguished Name for the new user (must start with `CN=`) |
+| `samAccountName` | text | Yes | SAM account name (maps to `sAMAccountName`) |
+| `userPrincipalName` | text | Yes | User Principal Name (maps to `userPrincipalName`, e.g., `user@example.com`) |
+| `firstName` | text | Yes | First name (maps to `givenName`) |
+| `lastName` | text | Yes | Last name (maps to `sn`) |
 | `displayName` | text | No | Display name (maps to `displayName`) |
 | `email` | text | No | Email address (maps to `mail`) |
 | `company` | text | No | Company name (maps to `company`) |
 | `department` | text | No | Department name (maps to `department`) |
 | `title` | text | No | Job title (maps to `title`) |
 | `address` | text | No | LDAP URL override (takes precedence over `ADDRESS` env var) |
-
-At least one attribute must be provided, either via named parameters, the `attributes` object, or both. Named parameters take precedence over conflicting keys in `attributes`.
+| `enabled` | boolean | No | Whether the account is enabled (default: `false`) |
+| `password` | text | No | Initial password (encoded as `unicodePwd`; requires LDAPS) |
+| `changePasswordAtNextLogin` | boolean | No | Whether the user must change their password at next login (default: `false`; sets `pwdLastSet` to `0`) |
+| `additionalAttributes` | object | No | Key-value pairs of additional LDAP attributes to set |
 
 ### Output
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `status` | text | `success` or `halted` |
-| `userDN` | text | DN of the updated user |
-| `modified` | boolean | `true` if attributes were updated |
-| `attributes` | array | List of attribute names that were modified |
+| `userDN` | text | DN of the created user |
+| `created` | boolean | `true` if the user was created |
+| `attributes` | array | List of user-supplied attribute names that were set |
 | `address` | text | LDAP server address used |
 
 ## Usage Examples
@@ -65,19 +67,22 @@ At least one attribute must be provided, either via named parameters, the `attri
 ```json
 {
   "userDN": "CN=John Doe,OU=Users,DC=example,DC=com",
-  "attributes": {
-    "displayName": "John Doe",
-    "mail": "john.doe@example.com",
-    "department": "Engineering"
-  }
+  "samAccountName": "jdoe",
+  "userPrincipalName": "jdoe@example.com",
+  "firstName": "John",
+  "lastName": "Doe"
 }
 ```
+
+This creates a disabled user with the minimum required attributes. The `objectClass`, `cn`, and `userAccountControl` are set automatically.
 
 ### Using Named Parameters
 
 ```json
 {
   "userDN": "CN=John Doe,OU=Users,DC=example,DC=com",
+  "samAccountName": "jdoe",
+  "userPrincipalName": "jdoe@example.com",
   "firstName": "John",
   "lastName": "Doe",
   "email": "john.doe@example.com",
@@ -86,14 +91,33 @@ At least one attribute must be provided, either via named parameters, the `attri
 }
 ```
 
-Named parameters can be combined with the `attributes` object for less common LDAP attributes:
+### With Password and Disabled Account
 
 ```json
 {
   "userDN": "CN=John Doe,OU=Users,DC=example,DC=com",
+  "samAccountName": "jdoe",
+  "userPrincipalName": "jdoe@example.com",
   "firstName": "John",
+  "lastName": "Doe",
+  "password": "P@ssw0rd!",
+  "enabled": false
+}
+```
+
+### Mixed Named Parameters and Additional Attributes
+
+Named parameters can be combined with the `additionalAttributes` object for less common LDAP attributes:
+
+```json
+{
+  "userDN": "CN=John Doe,OU=Users,DC=example,DC=com",
+  "samAccountName": "jdoe",
+  "userPrincipalName": "jdoe@example.com",
+  "firstName": "John",
+  "lastName": "Doe",
   "email": "john.doe@example.com",
-  "attributes": {
+  "additionalAttributes": {
     "physicalDeliveryOfficeName": "Building A, Room 101",
     "telephoneNumber": "+1-555-0100"
   }
@@ -104,20 +128,23 @@ Named parameters can be combined with the `attributes` object for less common LD
 
 ```json
 {
-  "id": "update-user-attrs",
+  "id": "create-ad-user",
   "type": "nodejs-20",
   "script": {
-    "repository": "github.com/sgnl-actions/ad-update-user",
+    "repository": "github.com/sgnl-actions/ad-create-user",
     "version": "v1.0.0",
     "type": "nodejs"
   },
   "script_inputs": {
     "userDN": "CN=John Doe,OU=Users,DC=example,DC=com",
-    "attributes": {
-      "displayName": "John Doe",
-      "department": "Engineering",
-      "title": "Software Engineer"
-    }
+    "samAccountName": "jdoe",
+    "userPrincipalName": "jdoe@example.com",
+    "firstName": "John",
+    "lastName": "Doe",
+    "email": "john.doe@example.com",
+    "department": "Engineering",
+    "title": "Software Engineer",
+    "enabled": true
   },
   "environment": {
     "ADDRESS": "ldaps://dc.example.com:636",
@@ -141,19 +168,23 @@ For development or self-signed certificate environments:
 
 ## API Details
 
-### LDAP Modify/Replace Operation
+### LDAP Add Operation
 
-This action uses the LDAP `replace` modification type for each attribute. The `replace` operation:
+This action uses the LDAP `add` operation to create a new directory entry. The entry is built as follows:
 
-- Sets the attribute to the specified value(s) if it exists
-- Creates the attribute with the specified value(s) if it does not exist
-- Is idempotent -- calling with the same values produces no errors
+1. **objectClass** — automatically set to `['top', 'person', 'organizationalPerson', 'user']`
+2. **cn** — extracted from the `userDN` (e.g., `CN=John Doe,...` → `cn: "John Doe"`)
+3. **User-supplied attributes** — from named parameters and the `additionalAttributes` object
+4. **userAccountControl** — `514` (disabled) by default, `512` if `enabled: true`
+5. **unicodePwd** — only included when `password` is provided; the password is wrapped in double quotes and encoded as UTF-16LE per AD requirements
+6. **pwdLastSet** — set to `0` when `changePasswordAtNextLogin` is `true`, forcing a password change at next login
 
 ### Named Parameter Mapping
 
 | Named Parameter | LDAP Attribute |
 |-----------------|---------------|
 | `samAccountName` | `sAMAccountName` |
+| `userPrincipalName` | `userPrincipalName` |
 | `firstName` | `givenName` |
 | `lastName` | `sn` |
 | `displayName` | `displayName` |
@@ -162,40 +193,11 @@ This action uses the LDAP `replace` modification type for each attribute. The `r
 | `department` | `department` |
 | `title` | `title` |
 
-### Common AD Attributes
-
-| Attribute | Description | Example |
-|-----------|-------------|---------|
-| `displayName` | Display name | `John Doe` |
-| `mail` | Email address | `john@example.com` |
-| `department` | Department | `Engineering` |
-| `title` | Job title | `Software Engineer` |
-| `telephoneNumber` | Phone number | `+1-555-0100` |
-| `physicalDeliveryOfficeName` | Office location | `Building A, Room 101` |
-| `manager` | Manager DN | `CN=Jane Smith,OU=Users,DC=example,DC=com` |
-| `description` | Description | `Senior engineer on platform team` |
-| `company` | Company name | `Example Corp` |
-| `streetAddress` | Street address | `123 Main St` |
-| `l` | City | `San Francisco` |
-| `st` | State | `CA` |
-| `postalCode` | Postal/ZIP code | `94105` |
-
-Multi-valued attributes (e.g., `otherTelephone`, `proxyAddresses`) can be passed as arrays:
-
-```json
-{
-  "attributes": {
-    "otherTelephone": ["+1-555-0100", "+1-555-0101"]
-  }
-}
-```
-
 ## Error Handling
 
 ### Success Scenarios
 
-- **Attribute updated** -- returns `status: "success"`, `modified: true`
-- **Same value re-applied** -- returns `status: "success"`, `modified: true` (idempotent, no error)
+- **User created** — returns `status: "success"`, `created: true`
 
 ### Retryable Errors
 
@@ -209,17 +211,19 @@ Multi-valued attributes (e.g., `otherTelephone`, `proxyAddresses`) can be passed
 
 | LDAP Code | Error | Description |
 |-----------|-------|-------------|
-| 32 | No Such Object | The `userDN` does not exist in AD |
+| 68 | Entry Already Exists | A user with the same DN already exists in AD |
 | 19 | Constraint Violation | Attribute value violates AD schema constraints |
 | 17 | Undefined Attribute Type | Attribute name not recognized by the AD schema |
+| 53 | Unwilling to Perform | Typically: setting `unicodePwd` over non-SSL connection |
 | 49 | Invalid Credentials | Bind DN or password is incorrect |
-| 50 | Insufficient Access Rights | Service account lacks Write permission |
+| 50 | Insufficient Access Rights | Service account lacks permission to create users |
 
 ## Security Considerations
 
 - Use LDAPS (port 636) in production to encrypt credentials and data in transit
+- LDAPS is **required** for setting the initial password (`unicodePwd`)
 - Only skip TLS verification (`TLS_SKIP_VERIFY=true`) in development environments
-- The service account should have minimal permissions -- only Write access on the specific user attributes needed
+- The service account should have minimal permissions — only the ability to create user objects in the target OU
 - Attribute values are not logged; only attribute names appear in the output to avoid leaking sensitive data
 
 ## Development
@@ -264,8 +268,17 @@ npm run dev
 
 ### Permission Errors
 
-- The service account needs Write permission on the target user object's attributes
-- Use AD delegation to grant granular permissions rather than Domain Admin
+- The service account needs permission to create user objects in the target OU
+- Use AD delegation to grant the "Create User objects" permission on the target OU
+
+### Entry Already Exists (LDAP Code 68)
+
+- A user with the same DN already exists — use a different DN or delete the existing user first
+
+### Password Errors (LDAP Code 53)
+
+- Setting `unicodePwd` requires an LDAPS connection — ensure the `ADDRESS` uses `ldaps://`
+- The password must meet the domain's password complexity requirements
 
 ### Attribute Errors
 
@@ -276,4 +289,4 @@ npm run dev
 ## Support
 
 - [SGNL Documentation](https://docs.sgnl.ai)
-- [GitHub Issues](https://github.com/sgnl-actions/ad-update-user/issues)
+- [GitHub Issues](https://github.com/sgnl-actions/ad-create-user/issues)
