@@ -82,7 +82,7 @@ export default {
     }
 
     const tlsOptions = {};
-    if (context.env.TLS_SKIP_VERIFY === 'true') {
+    if (context.environment?.TLS_SKIP_VERIFY === 'true') {
       tlsOptions.rejectUnauthorized = false;
     }
 
