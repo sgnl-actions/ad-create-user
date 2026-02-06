@@ -27,8 +27,8 @@ describe('AD Create User Script', () => {
       ADDRESS: 'ldaps://dc.example.com:636'
     },
     secrets: {
-      BASIC_USERNAME: 'CN=admin,DC=example,DC=com',
-      BASIC_PASSWORD: 'password123'
+      LDAP_BIND_DN: 'CN=admin,DC=example,DC=com',
+      LDAP_BIND_PASSWORD: 'password123'
     },
     outputs: {}
   };
@@ -258,10 +258,10 @@ describe('AD Create User Script', () => {
       expect(mockUnbind).toHaveBeenCalled();
     });
 
-    test('should throw on missing BASIC_USERNAME', async () => {
+    test('should throw on missing LDAP_BIND_DN', async () => {
       const context = {
         ...mockContext,
-        secrets: { ...mockContext.secrets, BASIC_USERNAME: '' }
+        secrets: { ...mockContext.secrets, LDAP_BIND_DN: '' }
       };
 
       const params = {
@@ -269,13 +269,13 @@ describe('AD Create User Script', () => {
         samAccountName: 'jdoe'
       };
 
-      await expect(script.invoke(params, context)).rejects.toThrow('BASIC_USERNAME secret is required');
+      await expect(script.invoke(params, context)).rejects.toThrow('LDAP_BIND_DN secret is required');
     });
 
-    test('should throw on missing BASIC_PASSWORD', async () => {
+    test('should throw on missing LDAP_BIND_PASSWORD', async () => {
       const context = {
         ...mockContext,
-        secrets: { ...mockContext.secrets, BASIC_PASSWORD: '' }
+        secrets: { ...mockContext.secrets, LDAP_BIND_PASSWORD: '' }
       };
 
       const params = {
@@ -283,7 +283,7 @@ describe('AD Create User Script', () => {
         samAccountName: 'jdoe'
       };
 
-      await expect(script.invoke(params, context)).rejects.toThrow('BASIC_PASSWORD secret is required');
+      await expect(script.invoke(params, context)).rejects.toThrow('LDAP_BIND_PASSWORD secret is required');
     });
 
     test('should set rejectUnauthorized false when TLS_SKIP_VERIFY is true', async () => {
