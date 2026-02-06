@@ -46,7 +46,7 @@ async function createUser(userDN, entry, client) {
 
 export default {
   invoke: async (params, context) => {
-    const { userDN } = params;
+    const { userDN, dry_run = false } = params;
     const attributes = buildAttributes(params);
 
     if (!attributes.sAMAccountName) {
@@ -54,6 +54,17 @@ export default {
     }
 
     const cn = extractCN(userDN);
+
+    if (dry_run) {
+      console.log('DRY RUN: No changes will be made to Active Directory');
+      return {
+        status: 'dry_run_completed',
+        userDN,
+        created: false,
+        attributes: Object.keys(attributes),
+        enabled: params.enabled === true
+      };
+    }
 
     const entry = {
       objectClass: AD_USER_OBJECT_CLASS,
@@ -109,7 +120,43 @@ export default {
 
   error: async (params, _context) => {
     const { error, userDN } = params;
-    console.error(`Error creating user ${userDN}: ${error.message}`);
+    console.error(`Failed to create AD user ${userDN}: ${error.message}`);
+
+    const errorMessage = error.message.toLowerCase();
+
+    // Authentication errors (fatal - don't retry)
+    if (errorMessage.includes('invalid credentials') ||
+        errorMessage.includes('authentication') ||
+        errorMessage.includes('bind failed')) {
+      console.error('Authentication failed - check BASIC_USERNAME and BASIC_PASSWORD');
+      throw new Error(`LDAP authentication failed: ${error.message}`);
+    }
+
+    // Connection errors (retryable)
+    if (errorMessage.includes('connection') ||
+        errorMessage.includes('timeout') ||
+        errorMessage.includes('econnrefused')) {
+      console.error('Connection error - may be transient, framework will retry');
+      throw error;
+    }
+
+    // Constraint violations (fatal - don't retry)
+    if (errorMessage.includes('constraint violation') ||
+        errorMessage.includes('already exists') ||
+        errorMessage.includes('invalid syntax')) {
+      console.error('Data validation error - check input parameters');
+      throw new Error(`Invalid user data: ${error.message}`);
+    }
+
+    // Insufficient permissions (fatal - don't retry)
+    if (errorMessage.includes('insufficient access') ||
+        errorMessage.includes('permission denied')) {
+      console.error('Insufficient permissions - check service account privileges');
+      throw new Error(`Insufficient LDAP permissions: ${error.message}`);
+    }
+
+    // Unknown error - re-throw for framework retry
+    console.error('Unknown error occurred, allowing framework to retry');
     throw error;
   },
 

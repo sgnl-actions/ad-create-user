@@ -439,8 +439,7 @@ describe('AD Create User Script', () => {
   });
 
   describe('error handler', () => {
-    test('should re-throw error and log context', async () => {
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    test('should re-throw connection errors for framework retry', async () => {
       const error = new Error('LDAP connection failed');
       const params = {
         userDN: 'CN=John Doe,OU=Users,DC=example,DC=com',
@@ -448,10 +447,36 @@ describe('AD Create User Script', () => {
       };
 
       await expect(script.error(params, mockContext)).rejects.toThrow('LDAP connection failed');
-      expect(consoleSpy).toHaveBeenCalledWith(
-        'Error creating user CN=John Doe,OU=Users,DC=example,DC=com: LDAP connection failed'
-      );
-      consoleSpy.mockRestore();
+    });
+
+    test('should wrap authentication errors', async () => {
+      const error = new Error('Invalid credentials');
+      const params = {
+        userDN: 'CN=John Doe,OU=Users,DC=example,DC=com',
+        error
+      };
+
+      await expect(script.error(params, mockContext)).rejects.toThrow('LDAP authentication failed');
+    });
+
+    test('should wrap permission errors', async () => {
+      const error = new Error('Insufficient access rights');
+      const params = {
+        userDN: 'CN=John Doe,OU=Users,DC=example,DC=com',
+        error
+      };
+
+      await expect(script.error(params, mockContext)).rejects.toThrow('Insufficient LDAP permissions');
+    });
+
+    test('should wrap constraint violation errors', async () => {
+      const error = new Error('Constraint violation');
+      const params = {
+        userDN: 'CN=John Doe,OU=Users,DC=example,DC=com',
+        error
+      };
+
+      await expect(script.error(params, mockContext)).rejects.toThrow('Invalid user data');
     });
   });
 
