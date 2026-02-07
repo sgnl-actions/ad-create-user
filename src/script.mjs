@@ -1,10 +1,24 @@
+/**
+ * Active Directory Create User Action
+ *
+ * Creates a new user in on-premise Active Directory using LDAP/LDAPS.
+ * Supports setting password, enabling/disabling account, and custom attributes.
+ */
+
 import { Client } from 'ldapts';
 import { getBaseURL } from '@sgnl-actions/utils';
 
+/** Required object classes for AD users */
 const AD_USER_OBJECT_CLASS = ['top', 'person', 'organizationalPerson', 'user'];
-const UAC_ENABLED = '512';
-const UAC_DISABLED = '514';
 
+/** userAccountControl values for enabled/disabled accounts */
+const UAC_ENABLED = '512';   // NORMAL_ACCOUNT
+const UAC_DISABLED = '514';  // NORMAL_ACCOUNT | ACCOUNTDISABLE
+
+/**
+ * Mapping from friendly parameter names to LDAP attribute names.
+ * These are the commonly used AD user attributes.
+ */
 const PARAM_TO_LDAP = {
   samAccountName: 'sAMAccountName',
   userPrincipalName: 'userPrincipalName',
@@ -17,6 +31,13 @@ const PARAM_TO_LDAP = {
   title: 'title'
 };
 
+/**
+ * Extract the Common Name (CN) from a Distinguished Name.
+ *
+ * @param {string} dn - The Distinguished Name (e.g., "CN=John Doe,OU=Users,DC=example,DC=com")
+ * @returns {string} The CN value
+ * @throws {Error} If DN doesn't start with CN=
+ */
 function extractCN(dn) {
   const match = dn.match(/^CN=([^,]+)/i);
   if (!match) {
@@ -25,12 +46,27 @@ function extractCN(dn) {
   return match[1];
 }
 
+/**
+ * Encode a password for Active Directory using UTF-16LE format.
+ * AD requires passwords to be wrapped in quotes and encoded as UTF-16LE.
+ *
+ * @param {string} password - The plaintext password
+ * @returns {Buffer} The encoded password buffer
+ */
 function encodePassword(password) {
   const quoted = `"${password}"`;
   return Buffer.from(quoted, 'utf16le');
 }
 
+/**
+ * Build LDAP attributes object from params, mapping friendly names to LDAP names.
+ * Named params override conflicting additionalAttributes keys.
+ *
+ * @param {Object} params - The input parameters
+ * @returns {Object} The LDAP attributes object
+ */
 function buildAttributes(params) {
+  // Start with additionalAttributes, then overlay named params
   const merged = { ...(params.additionalAttributes || {}) };
   for (const [param, ldapName] of Object.entries(PARAM_TO_LDAP)) {
     if (params[param] !== undefined) {
@@ -40,23 +76,71 @@ function buildAttributes(params) {
   return merged;
 }
 
-async function createUser(userDN, entry, client) {
-  await client.add(userDN, entry);
+/**
+ * Safely disconnect from LDAP server.
+ * Errors during unbind are logged but not thrown to avoid masking original errors.
+ *
+ * @param {Client} client - The ldapts client
+ */
+async function safeUnbind(client) {
+  try {
+    await client.unbind();
+  } catch (unbindError) {
+    console.warn(`Warning: Error during LDAP unbind: ${unbindError.message}`);
+  }
 }
 
 export default {
+  /**
+   * Main execution handler - creates a user in Active Directory.
+   *
+   * @param {Object} params - Job input parameters
+   * @param {string} params.userDN - Distinguished Name for the new user
+   * @param {string} params.samAccountName - SAM account name (pre-Windows 2000 name)
+   * @param {string} [params.userPrincipalName] - User principal name (email-style login)
+   * @param {string} [params.firstName] - First name (givenName)
+   * @param {string} [params.lastName] - Last name (sn)
+   * @param {string} [params.displayName] - Display name
+   * @param {string} [params.email] - Email address (mail)
+   * @param {string} [params.company] - Company name
+   * @param {string} [params.department] - Department name
+   * @param {string} [params.title] - Job title
+   * @param {string} [params.password] - Initial password (will be encoded)
+   * @param {boolean} [params.enabled] - Create as enabled (default: false/disabled)
+   * @param {boolean} [params.changePasswordAtNextLogin] - Force password change at next login
+   * @param {Object} [params.additionalAttributes] - Additional LDAP attributes to set
+   * @param {boolean} [params.dry_run] - If true, validate without making changes
+   * @param {Object} context - Execution context with environment and secrets
+   * @returns {Object} Job results including status, userDN, and created flag
+   */
   invoke: async (params, context) => {
+    console.log('Starting Active Directory create user operation');
+
     const { userDN, dry_run = false } = params;
+
+    // Validate required parameters
+    if (!userDN) {
+      throw new Error('userDN is required');
+    }
+
+    // Build attributes and validate samAccountName
     const attributes = buildAttributes(params);
 
     if (!attributes.sAMAccountName) {
       throw new Error('samAccountName is required to create an AD user');
     }
 
+    // Extract CN from DN
     const cn = extractCN(userDN);
 
+    console.log(`Preparing to create user: ${cn}`);
+    console.log(`Account will be ${params.enabled === true ? 'enabled' : 'disabled'}`);
+
+    // Handle dry run - validate and return without making changes
     if (dry_run) {
       console.log('DRY RUN: No changes will be made to Active Directory');
+      console.log(`Would create user at: ${userDN}`);
+      console.log(`With attributes: ${Object.keys(attributes).join(', ')}`);
       return {
         status: 'dry_run_completed',
         userDN,
@@ -66,6 +150,7 @@ export default {
       };
     }
 
+    // Build the LDAP entry
     const entry = {
       objectClass: AD_USER_OBJECT_CLASS,
       cn,
@@ -73,39 +158,56 @@ export default {
       userAccountControl: params.enabled === true ? UAC_ENABLED : UAC_DISABLED
     };
 
+    // Add password if provided (encoded for AD)
     if (params.password) {
       entry.unicodePwd = encodePassword(params.password);
+      console.log('Password will be set during user creation');
     }
 
+    // Force password change at next login if requested
     if (params.changePasswordAtNextLogin) {
       entry.pwdLastSet = '0';
+      console.log('User will be required to change password at next login');
     }
 
+    // Get LDAP connection details
     const address = getBaseURL(params, context);
-    const username = context.secrets.LDAP_BIND_DN;
-    const password = context.secrets.LDAP_BIND_PASSWORD;
+    const bindDN = context.secrets.LDAP_BIND_DN;
+    const bindPassword = context.secrets.LDAP_BIND_PASSWORD;
 
-    if (!username) {
+    // Validate required secrets
+    if (!bindDN) {
       throw new Error('LDAP_BIND_DN secret is required');
     }
-    if (!password) {
+    if (!bindPassword) {
       throw new Error('LDAP_BIND_PASSWORD secret is required');
     }
 
-    const tlsOptions = {};
-    if (context.environment?.TLS_SKIP_VERIFY === 'true') {
-      tlsOptions.rejectUnauthorized = false;
+    // Configure LDAP client with timeouts
+    const clientOptions = {
+      url: address,
+      timeout: 10000,
+      connectTimeout: 10000
+    };
+
+    // Configure TLS options for secure connections
+    if (address.startsWith('ldaps://') || context.environment?.TLS_SKIP_VERIFY === 'true') {
+      clientOptions.tlsOptions = {
+        rejectUnauthorized: context.environment?.TLS_SKIP_VERIFY !== 'true'
+      };
     }
 
-    const client = new Client({
-      url: address,
-      tlsOptions
-    });
+    const client = new Client(clientOptions);
 
     try {
-      await client.bind(username, password);
-      await createUser(userDN, entry, client);
+      console.log(`Connecting to LDAP server at ${address}`);
+      await client.bind(bindDN, bindPassword);
+      console.log('Successfully authenticated to LDAP server');
 
+      console.log(`Creating user: ${userDN}`);
+      await client.add(userDN, entry);
+
+      console.log(`Successfully created user: ${userDN}`);
       return {
         status: 'success',
         userDN,
@@ -113,14 +215,26 @@ export default {
         attributes: Object.keys(attributes),
         address
       };
+    } catch (error) {
+      console.error(`Failed to create user: ${error.message}`);
+      throw error;
     } finally {
-      await client.unbind();
+      await safeUnbind(client);
     }
   },
 
+  /**
+   * Error recovery handler - classifies errors and determines retry behavior.
+   *
+   * @param {Object} params - Original params plus error information
+   * @param {Error} params.error - The error that occurred
+   * @param {string} params.userDN - The user DN being created
+   * @param {Object} _context - Execution context (unused)
+   * @throws {Error} Re-throws with appropriate classification
+   */
   error: async (params, _context) => {
     const { error, userDN } = params;
-    console.error(`Failed to create AD user ${userDN}: ${error.message}`);
+    console.error(`Error handler invoked for user "${userDN}": ${error.message}`);
 
     const errorMessage = error.message.toLowerCase();
 
@@ -132,7 +246,7 @@ export default {
       throw new Error(`LDAP authentication failed: ${error.message}`);
     }
 
-    // Connection errors (retryable)
+    // Connection errors (retryable - framework will retry)
     if (errorMessage.includes('connection') ||
         errorMessage.includes('timeout') ||
         errorMessage.includes('econnrefused')) {
@@ -160,8 +274,19 @@ export default {
     throw error;
   },
 
+  /**
+   * Graceful shutdown handler - called when the job is halted.
+   *
+   * @param {Object} params - Original params plus halt reason
+   * @param {string} params.reason - The reason for the halt
+   * @param {string} [params.userDN] - The user DN being created
+   * @param {Object} _context - Execution context (unused)
+   * @returns {Object} Cleanup results with halted status
+   */
   halt: async (params, _context) => {
     const { reason, userDN } = params;
+    console.log(`Active Directory create user operation halted: ${reason}`);
+
     return {
       status: 'halted',
       userDN: userDN || 'unknown',

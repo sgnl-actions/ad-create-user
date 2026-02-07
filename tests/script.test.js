@@ -301,11 +301,13 @@ describe('AD Create User Script', () => {
 
       expect(Client).toHaveBeenCalledWith({
         url: 'ldaps://dc.example.com:636',
+        timeout: 10000,
+        connectTimeout: 10000,
         tlsOptions: { rejectUnauthorized: false }
       });
     });
 
-    test('should leave tlsOptions empty when TLS_SKIP_VERIFY is not set', async () => {
+    test('should set rejectUnauthorized to true for ldaps:// URLs when TLS_SKIP_VERIFY is not set', async () => {
       const params = {
         userDN: 'CN=John Doe,OU=Users,DC=example,DC=com',
         samAccountName: 'jdoe'
@@ -315,7 +317,26 @@ describe('AD Create User Script', () => {
 
       expect(Client).toHaveBeenCalledWith({
         url: 'ldaps://dc.example.com:636',
-        tlsOptions: {}
+        timeout: 10000,
+        connectTimeout: 10000,
+        tlsOptions: { rejectUnauthorized: true }
+      });
+    });
+
+    test('should not include tlsOptions for ldap:// URLs when TLS_SKIP_VERIFY is not set', async () => {
+      mockGetBaseURL.mockReturnValue('ldap://dc.example.com:389');
+
+      const params = {
+        userDN: 'CN=John Doe,OU=Users,DC=example,DC=com',
+        samAccountName: 'jdoe'
+      };
+
+      await script.invoke(params, mockContext);
+
+      expect(Client).toHaveBeenCalledWith({
+        url: 'ldap://dc.example.com:389',
+        timeout: 10000,
+        connectTimeout: 10000
       });
     });
 
@@ -435,6 +456,56 @@ describe('AD Create User Script', () => {
       expect(result.attributes).not.toContain('objectClass');
       expect(result.attributes).not.toContain('cn');
       expect(result.attributes).not.toContain('userAccountControl');
+    });
+
+    test('should throw when userDN is missing', async () => {
+      const params = { samAccountName: 'jdoe' };
+
+      await expect(script.invoke(params, mockContext)).rejects.toThrow('userDN is required');
+      expect(mockBind).not.toHaveBeenCalled();
+    });
+
+    test('should handle unbind errors gracefully', async () => {
+      mockUnbind.mockRejectedValueOnce(new Error('Unbind failed'));
+
+      const params = {
+        userDN: 'CN=John Doe,OU=Users,DC=example,DC=com',
+        samAccountName: 'jdoe'
+      };
+
+      const result = await script.invoke(params, mockContext);
+
+      expect(result.status).toBe('success');
+      expect(result.created).toBe(true);
+    });
+
+    test('should not mask original error when unbind also fails', async () => {
+      mockAdd.mockRejectedValueOnce(new Error('Add operation failed'));
+      mockUnbind.mockRejectedValueOnce(new Error('Unbind failed'));
+
+      const params = {
+        userDN: 'CN=John Doe,OU=Users,DC=example,DC=com',
+        samAccountName: 'jdoe'
+      };
+
+      await expect(script.invoke(params, mockContext)).rejects.toThrow('Add operation failed');
+    });
+
+    test('should return dry_run_completed when dry_run is true', async () => {
+      const params = {
+        userDN: 'CN=John Doe,OU=Users,DC=example,DC=com',
+        samAccountName: 'jdoe',
+        dry_run: true
+      };
+
+      const result = await script.invoke(params, mockContext);
+
+      expect(result.status).toBe('dry_run_completed');
+      expect(result.userDN).toBe('CN=John Doe,OU=Users,DC=example,DC=com');
+      expect(result.created).toBe(false);
+      expect(result.attributes).toEqual(['sAMAccountName']);
+      expect(mockBind).not.toHaveBeenCalled();
+      expect(mockAdd).not.toHaveBeenCalled();
     });
   });
 
