@@ -23,12 +23,12 @@ const { Client } = await import('ldapts');
 
 describe('AD Create User Script', () => {
   const mockContext = {
-    env: {
+    environment: {
       ADDRESS: 'ldaps://dc.example.com:636'
     },
     secrets: {
-      BASIC_USERNAME: 'CN=admin,DC=example,DC=com',
-      BASIC_PASSWORD: 'password123'
+      LDAP_BIND_DN: 'CN=admin,DC=example,DC=com',
+      LDAP_BIND_PASSWORD: 'password123'
     },
     outputs: {}
   };
@@ -206,7 +206,7 @@ describe('AD Create User Script', () => {
       expect(callArgs.unicodePwd).toBeUndefined();
     });
 
-    test('should propagate LDAP error code 68 (entry already exists)', async () => {
+    test('should propagate LDAP error code 68 (entry already exists) by default', async () => {
       mockAdd.mockRejectedValue(
         Object.assign(new Error('Entry already exists'), { code: 68 })
       );
@@ -217,6 +217,50 @@ describe('AD Create User Script', () => {
       };
 
       await expect(script.invoke(params, mockContext)).rejects.toThrow('Entry already exists');
+    });
+
+    test('should return success with alreadyExisted=true when successIfAlreadyExists is true and user exists', async () => {
+      mockAdd.mockRejectedValue(
+        Object.assign(new Error('Entry already exists'), { code: 68 })
+      );
+
+      const params = {
+        userDN: 'CN=John Doe,OU=Users,DC=example,DC=com',
+        samAccountName: 'jdoe',
+        successIfAlreadyExists: true
+      };
+
+      const result = await script.invoke(params, mockContext);
+
+      expect(result.status).toBe('success');
+      expect(result.created).toBe(false);
+      expect(result.alreadyExisted).toBe(true);
+      expect(result.userDN).toBe('CN=John Doe,OU=Users,DC=example,DC=com');
+    });
+
+    test('should set alreadyExisted=false when user is newly created', async () => {
+      const params = {
+        userDN: 'CN=John Doe,OU=Users,DC=example,DC=com',
+        samAccountName: 'jdoe'
+      };
+
+      const result = await script.invoke(params, mockContext);
+
+      expect(result.status).toBe('success');
+      expect(result.created).toBe(true);
+      expect(result.alreadyExisted).toBe(false);
+    });
+
+    test('should still throw other errors even when successIfAlreadyExists is true', async () => {
+      mockAdd.mockRejectedValue(new Error('Insufficient access rights'));
+
+      const params = {
+        userDN: 'CN=John Doe,OU=Users,DC=example,DC=com',
+        samAccountName: 'jdoe',
+        successIfAlreadyExists: true
+      };
+
+      await expect(script.invoke(params, mockContext)).rejects.toThrow('Insufficient access rights');
     });
 
     test('should propagate LDAP error code 19 (constraint violation)', async () => {
@@ -258,10 +302,10 @@ describe('AD Create User Script', () => {
       expect(mockUnbind).toHaveBeenCalled();
     });
 
-    test('should throw on missing BASIC_USERNAME', async () => {
+    test('should throw on missing LDAP_BIND_DN', async () => {
       const context = {
         ...mockContext,
-        secrets: { ...mockContext.secrets, BASIC_USERNAME: '' }
+        secrets: { ...mockContext.secrets, LDAP_BIND_DN: '' }
       };
 
       const params = {
@@ -269,13 +313,13 @@ describe('AD Create User Script', () => {
         samAccountName: 'jdoe'
       };
 
-      await expect(script.invoke(params, context)).rejects.toThrow('BASIC_USERNAME secret is required');
+      await expect(script.invoke(params, context)).rejects.toThrow('LDAP_BIND_DN secret is required');
     });
 
-    test('should throw on missing BASIC_PASSWORD', async () => {
+    test('should throw on missing LDAP_BIND_PASSWORD', async () => {
       const context = {
         ...mockContext,
-        secrets: { ...mockContext.secrets, BASIC_PASSWORD: '' }
+        secrets: { ...mockContext.secrets, LDAP_BIND_PASSWORD: '' }
       };
 
       const params = {
@@ -283,13 +327,13 @@ describe('AD Create User Script', () => {
         samAccountName: 'jdoe'
       };
 
-      await expect(script.invoke(params, context)).rejects.toThrow('BASIC_PASSWORD secret is required');
+      await expect(script.invoke(params, context)).rejects.toThrow('LDAP_BIND_PASSWORD secret is required');
     });
 
     test('should set rejectUnauthorized false when TLS_SKIP_VERIFY is true', async () => {
       const context = {
         ...mockContext,
-        env: { ...mockContext.env, TLS_SKIP_VERIFY: 'true' }
+        environment: { ...mockContext.environment, TLS_SKIP_VERIFY: 'true' }
       };
 
       const params = {
@@ -301,11 +345,13 @@ describe('AD Create User Script', () => {
 
       expect(Client).toHaveBeenCalledWith({
         url: 'ldaps://dc.example.com:636',
+        timeout: 10000,
+        connectTimeout: 10000,
         tlsOptions: { rejectUnauthorized: false }
       });
     });
 
-    test('should leave tlsOptions empty when TLS_SKIP_VERIFY is not set', async () => {
+    test('should set rejectUnauthorized to true for ldaps:// URLs when TLS_SKIP_VERIFY is not set', async () => {
       const params = {
         userDN: 'CN=John Doe,OU=Users,DC=example,DC=com',
         samAccountName: 'jdoe'
@@ -315,7 +361,26 @@ describe('AD Create User Script', () => {
 
       expect(Client).toHaveBeenCalledWith({
         url: 'ldaps://dc.example.com:636',
-        tlsOptions: {}
+        timeout: 10000,
+        connectTimeout: 10000,
+        tlsOptions: { rejectUnauthorized: true }
+      });
+    });
+
+    test('should not include tlsOptions for ldap:// URLs when TLS_SKIP_VERIFY is not set', async () => {
+      mockGetBaseURL.mockReturnValue('ldap://dc.example.com:389');
+
+      const params = {
+        userDN: 'CN=John Doe,OU=Users,DC=example,DC=com',
+        samAccountName: 'jdoe'
+      };
+
+      await script.invoke(params, mockContext);
+
+      expect(Client).toHaveBeenCalledWith({
+        url: 'ldap://dc.example.com:389',
+        timeout: 10000,
+        connectTimeout: 10000
       });
     });
 
@@ -436,11 +501,60 @@ describe('AD Create User Script', () => {
       expect(result.attributes).not.toContain('cn');
       expect(result.attributes).not.toContain('userAccountControl');
     });
+
+    test('should throw when userDN is missing', async () => {
+      const params = { samAccountName: 'jdoe' };
+
+      await expect(script.invoke(params, mockContext)).rejects.toThrow('userDN is required');
+      expect(mockBind).not.toHaveBeenCalled();
+    });
+
+    test('should handle unbind errors gracefully', async () => {
+      mockUnbind.mockRejectedValueOnce(new Error('Unbind failed'));
+
+      const params = {
+        userDN: 'CN=John Doe,OU=Users,DC=example,DC=com',
+        samAccountName: 'jdoe'
+      };
+
+      const result = await script.invoke(params, mockContext);
+
+      expect(result.status).toBe('success');
+      expect(result.created).toBe(true);
+    });
+
+    test('should not mask original error when unbind also fails', async () => {
+      mockAdd.mockRejectedValueOnce(new Error('Add operation failed'));
+      mockUnbind.mockRejectedValueOnce(new Error('Unbind failed'));
+
+      const params = {
+        userDN: 'CN=John Doe,OU=Users,DC=example,DC=com',
+        samAccountName: 'jdoe'
+      };
+
+      await expect(script.invoke(params, mockContext)).rejects.toThrow('Add operation failed');
+    });
+
+    test('should return dry_run_completed when dry_run is true', async () => {
+      const params = {
+        userDN: 'CN=John Doe,OU=Users,DC=example,DC=com',
+        samAccountName: 'jdoe',
+        dry_run: true
+      };
+
+      const result = await script.invoke(params, mockContext);
+
+      expect(result.status).toBe('dry_run_completed');
+      expect(result.userDN).toBe('CN=John Doe,OU=Users,DC=example,DC=com');
+      expect(result.created).toBe(false);
+      expect(result.attributes).toEqual(['sAMAccountName']);
+      expect(mockBind).not.toHaveBeenCalled();
+      expect(mockAdd).not.toHaveBeenCalled();
+    });
   });
 
   describe('error handler', () => {
-    test('should re-throw error and log context', async () => {
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    test('should re-throw connection errors for framework retry', async () => {
       const error = new Error('LDAP connection failed');
       const params = {
         userDN: 'CN=John Doe,OU=Users,DC=example,DC=com',
@@ -448,10 +562,36 @@ describe('AD Create User Script', () => {
       };
 
       await expect(script.error(params, mockContext)).rejects.toThrow('LDAP connection failed');
-      expect(consoleSpy).toHaveBeenCalledWith(
-        'Error creating user CN=John Doe,OU=Users,DC=example,DC=com: LDAP connection failed'
-      );
-      consoleSpy.mockRestore();
+    });
+
+    test('should wrap authentication errors', async () => {
+      const error = new Error('Invalid credentials');
+      const params = {
+        userDN: 'CN=John Doe,OU=Users,DC=example,DC=com',
+        error
+      };
+
+      await expect(script.error(params, mockContext)).rejects.toThrow('LDAP authentication failed');
+    });
+
+    test('should wrap permission errors', async () => {
+      const error = new Error('Insufficient access rights');
+      const params = {
+        userDN: 'CN=John Doe,OU=Users,DC=example,DC=com',
+        error
+      };
+
+      await expect(script.error(params, mockContext)).rejects.toThrow('Insufficient LDAP permissions');
+    });
+
+    test('should wrap constraint violation errors', async () => {
+      const error = new Error('Constraint violation');
+      const params = {
+        userDN: 'CN=John Doe,OU=Users,DC=example,DC=com',
+        error
+      };
+
+      await expect(script.error(params, mockContext)).rejects.toThrow('Invalid user data');
     });
   });
 

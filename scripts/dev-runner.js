@@ -2,42 +2,66 @@
 
 /**
  * Development runner for testing scripts locally
+ *
+ * Configuration is read from environment variables. Set them in:
+ * - Parent directory's .env file (loaded via --env-file flag)
+ * - Shell environment variables
+ * - Or override inline below
  */
 
 import script from '../src/script.mjs';
 
+// Read configuration from environment variables (set in ../.env)
 const mockContext = {
-  env: {
-    ADDRESS: 'ldaps://dc.example.com:636',
+  environment: {
+    ADDRESS: process.env.AD_ADDRESS || 'ldap://localhost:389',
+    TLS_SKIP_VERIFY: process.env.TLS_SKIP_VERIFY || 'false',
   },
   secrets: {
-    BASIC_USERNAME: 'CN=admin,DC=example,DC=com',
-    BASIC_PASSWORD: 'admin-password',
+    LDAP_BIND_DN: process.env.LDAP_BIND_DN || '',
+    LDAP_BIND_PASSWORD: process.env.LDAP_BIND_PASSWORD || '',
   },
   outputs: {},
   partial_results: {},
   current_step: 'start',
 };
 
+// Action-specific parameters - customize these for your test
 const mockParams = {
-  userDN: 'CN=John Doe,OU=Users,DC=example,DC=com',
-  samAccountName: 'jdoe',
+  userDN: 'CN=John Smith,OU=Users,DC=corp,DC=example,DC=com',
+  samAccountName: 'jsmith',
   firstName: 'John',
-  lastName: 'Doe',
-  email: 'john.doe@example.com',
+  lastName: 'Smith',
+  email: 'john.smith@example.com',
   department: 'Engineering',
   title: 'Software Engineer',
-  enabled: true,
-  attributes: {
+  // Note: password requires LDAPS connection - omit for plain LDAP
+  // password: 'SecurePassword123!',
+  enabled: false,  // Create disabled first, then enable with enable-user action
+  additionalAttributes: {
     telephoneNumber: '+1-555-0100',
   },
+  dry_run: process.env.DRY_RUN === 'true',
 };
 
 async function runDev() {
   console.log('Running job script in development mode...\n');
 
+  // Validate required environment variables
+  if (!mockContext.secrets.LDAP_BIND_DN || !mockContext.secrets.LDAP_BIND_PASSWORD) {
+    console.error('ERROR: Missing required environment variables.');
+    console.error('Set LDAP_BIND_DN and LDAP_BIND_PASSWORD in ../.env or environment.');
+    console.error('\nExample:');
+    console.error('  export LDAP_BIND_DN="CN=admin,DC=example,DC=com"');
+    console.error('  export LDAP_BIND_PASSWORD="password"');
+    process.exit(1);
+  }
+
   console.log('Parameters:', JSON.stringify(mockParams, null, 2));
-  console.log('Context:', JSON.stringify(mockContext, null, 2));
+  console.log('Context:', JSON.stringify({
+    ...mockContext,
+    secrets: { LDAP_BIND_DN: mockContext.secrets.LDAP_BIND_DN, LDAP_BIND_PASSWORD: '***' }
+  }, null, 2));
   console.log('\n' + '='.repeat(50) + '\n');
 
   try {

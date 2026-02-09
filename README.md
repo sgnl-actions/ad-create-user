@@ -20,8 +20,8 @@ Supports setting any combination of standard AD user attributes and an optional 
 
 | Secret | Description |
 |--------|-------------|
-| `BASIC_USERNAME` | Bind DN of the service account (e.g., `CN=svc-sgnl,OU=Service Accounts,DC=example,DC=com`) |
-| `BASIC_PASSWORD` | Password for the service account |
+| `LDAP_BIND_DN` | Bind DN of the service account (e.g., `CN=svc-sgnl,OU=Service Accounts,DC=example,DC=com`) |
+| `LDAP_BIND_PASSWORD` | Password for the service account |
 
 ### Environment Variables
 
@@ -49,6 +49,7 @@ Supports setting any combination of standard AD user attributes and an optional 
 | `password` | text | No | Initial password (encoded as `unicodePwd`; requires LDAPS) |
 | `changePasswordAtNextLogin` | boolean | No | Whether the user must change their password at next login (default: `false`; sets `pwdLastSet` to `0`) |
 | `additionalAttributes` | object | No | Key-value pairs of additional LDAP attributes to set |
+| `successIfAlreadyExists` | boolean | No | If `true`, return success when user already exists instead of throwing an error (default: `false`) |
 
 ### Output
 
@@ -56,7 +57,8 @@ Supports setting any combination of standard AD user attributes and an optional 
 |-------|------|-------------|
 | `status` | text | `success` or `halted` |
 | `userDN` | text | DN of the created user |
-| `created` | boolean | `true` if the user was created |
+| `created` | boolean | `true` if the user was created, `false` if it already existed |
+| `alreadyExisted` | boolean | `true` if the user already existed (when `successIfAlreadyExists` is enabled) |
 | `attributes` | array | List of user-supplied attribute names that were set |
 | `address` | text | LDAP server address used |
 
@@ -104,6 +106,26 @@ This creates a disabled user with the minimum required attributes. The `objectCl
   "enabled": false
 }
 ```
+
+### Idempotent Creation (Success If Already Exists)
+
+Use `successIfAlreadyExists: true` for idempotent operations where you want the action to succeed even if the user already exists:
+
+```json
+{
+  "userDN": "CN=John Doe,OU=Users,DC=example,DC=com",
+  "samAccountName": "jdoe",
+  "userPrincipalName": "jdoe@example.com",
+  "firstName": "John",
+  "lastName": "Doe",
+  "successIfAlreadyExists": true
+}
+```
+
+When the user already exists and this flag is set, the response will include:
+- `status: "success"`
+- `created: false`
+- `alreadyExisted: true`
 
 ### Mixed Named Parameters and Additional Attributes
 
@@ -197,7 +219,8 @@ This action uses the LDAP `add` operation to create a new directory entry. The e
 
 ### Success Scenarios
 
-- **User created** — returns `status: "success"`, `created: true`
+- **User created** — returns `status: "success"`, `created: true`, `alreadyExisted: false`
+- **User already exists (with `successIfAlreadyExists: true`)** — returns `status: "success"`, `created: false`, `alreadyExisted: true`
 
 ### Retryable Errors
 
@@ -211,7 +234,7 @@ This action uses the LDAP `add` operation to create a new directory entry. The e
 
 | LDAP Code | Error | Description |
 |-----------|-------|-------------|
-| 68 | Entry Already Exists | A user with the same DN already exists in AD |
+| 68 | Entry Already Exists | A user with the same DN already exists in AD (use `successIfAlreadyExists: true` to treat as success) |
 | 19 | Constraint Violation | Attribute value violates AD schema constraints |
 | 17 | Undefined Attribute Type | Attribute name not recognized by the AD schema |
 | 53 | Unwilling to Perform | Typically: setting `unicodePwd` over non-SSL connection |
