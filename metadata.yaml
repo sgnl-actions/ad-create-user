@@ -52,11 +52,6 @@ inputs:
     description: Job title (maps to title)
     required: false
 
-  address:
-    type: text
-    description: Optional LDAP/LDAPS URL override (e.g., ldaps://dc.example.com:636)
-    required: false
-
   enabled:
     type: boolean
     description: Whether the account should be enabled (default false; sets userAccountControl to 512 or 514)
@@ -82,6 +77,16 @@ inputs:
     description: When true, validates parameters and logs intended actions without making changes to Active Directory
     required: false
 
+  successIfAlreadyExists:
+    type: boolean
+    description: If true, return success when user already exists instead of throwing an error (default false)
+    required: false
+
+  address:
+    type: text
+    description: Optional LDAP server URL override
+    required: false
+
 outputs:
   status:
     type: text
@@ -94,6 +99,10 @@ outputs:
   created:
     type: boolean
     description: Whether the user was created
+
+  alreadyExisted:
+    type: boolean
+    description: True if the user already existed (when successIfAlreadyExists is enabled)
 
   attributes:
     type: array
