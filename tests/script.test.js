@@ -206,7 +206,7 @@ describe('AD Create User Script', () => {
       expect(callArgs.unicodePwd).toBeUndefined();
     });
 
-    test('should propagate LDAP error code 68 (entry already exists)', async () => {
+    test('should propagate LDAP error code 68 (entry already exists) by default', async () => {
       mockAdd.mockRejectedValue(
         Object.assign(new Error('Entry already exists'), { code: 68 })
       );
@@ -217,6 +217,50 @@ describe('AD Create User Script', () => {
       };
 
       await expect(script.invoke(params, mockContext)).rejects.toThrow('Entry already exists');
+    });
+
+    test('should return success with alreadyExisted=true when successIfAlreadyExists is true and user exists', async () => {
+      mockAdd.mockRejectedValue(
+        Object.assign(new Error('Entry already exists'), { code: 68 })
+      );
+
+      const params = {
+        userDN: 'CN=John Doe,OU=Users,DC=example,DC=com',
+        samAccountName: 'jdoe',
+        successIfAlreadyExists: true
+      };
+
+      const result = await script.invoke(params, mockContext);
+
+      expect(result.status).toBe('success');
+      expect(result.created).toBe(false);
+      expect(result.alreadyExisted).toBe(true);
+      expect(result.userDN).toBe('CN=John Doe,OU=Users,DC=example,DC=com');
+    });
+
+    test('should set alreadyExisted=false when user is newly created', async () => {
+      const params = {
+        userDN: 'CN=John Doe,OU=Users,DC=example,DC=com',
+        samAccountName: 'jdoe'
+      };
+
+      const result = await script.invoke(params, mockContext);
+
+      expect(result.status).toBe('success');
+      expect(result.created).toBe(true);
+      expect(result.alreadyExisted).toBe(false);
+    });
+
+    test('should still throw other errors even when successIfAlreadyExists is true', async () => {
+      mockAdd.mockRejectedValue(new Error('Insufficient access rights'));
+
+      const params = {
+        userDN: 'CN=John Doe,OU=Users,DC=example,DC=com',
+        samAccountName: 'jdoe',
+        successIfAlreadyExists: true
+      };
+
+      await expect(script.invoke(params, mockContext)).rejects.toThrow('Insufficient access rights');
     });
 
     test('should propagate LDAP error code 19 (constraint violation)', async () => {

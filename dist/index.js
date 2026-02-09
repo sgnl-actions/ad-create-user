@@ -140,13 +140,14 @@ var script = {
    * @param {boolean} [params.changePasswordAtNextLogin] - Force password change at next login
    * @param {Object} [params.additionalAttributes] - Additional LDAP attributes to set
    * @param {boolean} [params.dry_run] - If true, validate without making changes
+   * @param {boolean} [params.successIfAlreadyExists] - If true, return success when user already exists
    * @param {Object} context - Execution context with environment and secrets
    * @returns {Object} Job results including status, userDN, and created flag
    */
   invoke: async (params, context) => {
     console.log('Starting Active Directory create user operation');
 
-    const { userDN, dry_run = false } = params;
+    const { userDN, dry_run = false, successIfAlreadyExists = false } = params;
 
     // Validate required parameters
     if (!userDN) {
@@ -242,10 +243,24 @@ var script = {
         status: 'success',
         userDN,
         created: true,
+        alreadyExisted: false,
         attributes: Object.keys(attributes),
         address
       };
     } catch (error) {
+      // Check if this is an "already exists" error and we should treat it as success
+      const errorMessage = error.message.toLowerCase();
+      if (successIfAlreadyExists && (errorMessage.includes('already exists') || error.code === 68)) {
+        console.log(`User already exists at ${userDN}, treating as success per successIfAlreadyExists flag`);
+        return {
+          status: 'success',
+          userDN,
+          created: false,
+          alreadyExisted: true,
+          attributes: Object.keys(attributes),
+          address
+        };
+      }
       console.error(`Failed to create user: ${error.message}`);
       throw error;
     } finally {
