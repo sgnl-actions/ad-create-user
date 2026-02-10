@@ -32,24 +32,24 @@ Supports setting any combination of standard AD user attributes and an optional 
 
 ### Input Parameters
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `userDN` | text | Yes | Distinguished Name for the new user (must start with `CN=`) |
-| `samAccountName` | text | Yes | SAM account name (maps to `sAMAccountName`) |
-| `userPrincipalName` | text | Yes | User Principal Name (maps to `userPrincipalName`, e.g., `user@example.com`) |
-| `firstName` | text | Yes | First name (maps to `givenName`) |
-| `lastName` | text | Yes | Last name (maps to `sn`) |
-| `displayName` | text | No | Display name (maps to `displayName`) |
-| `email` | text | No | Email address (maps to `mail`) |
-| `company` | text | No | Company name (maps to `company`) |
-| `department` | text | No | Department name (maps to `department`) |
-| `title` | text | No | Job title (maps to `title`) |
-| `address` | text | No | LDAP URL override (takes precedence over `ADDRESS` env var) |
-| `enabled` | boolean | No | Whether the account is enabled (default: `false`) |
-| `password` | text | No | Initial password (encoded as `unicodePwd`; requires LDAPS) |
-| `changePasswordAtNextLogin` | boolean | No | Whether the user must change their password at next login (default: `false`; sets `pwdLastSet` to `0`) |
-| `additionalAttributes` | object | No | Key-value pairs of additional LDAP attributes to set |
-| `successIfAlreadyExists` | boolean | No | If `true`, return success when user already exists instead of throwing an error (default: `false`) |
+| Parameter | Type | Required | Description | Example |
+|-----------|------|----------|-------------|---------|
+| `userDN` | text | Yes | Distinguished Name for the new user (must start with `CN=`) | `CN=John Doe,OU=Users,DC=corp,DC=example,DC=com` |
+| `samAccountName` | text | Yes | SAM account name (maps to `sAMAccountName`) | `jdoe` |
+| `userPrincipalName` | text | Yes | User Principal Name (maps to `userPrincipalName`) | `jdoe@example.com` |
+| `firstName` | text | Yes | First name (maps to `givenName`) | `John` |
+| `lastName` | text | Yes | Last name (maps to `sn`) | `Doe` |
+| `displayName` | text | No | Display name (maps to `displayName`) | `John Doe` |
+| `email` | text | No | Email address (maps to `mail`) | `john.doe@example.com` |
+| `company` | text | No | Company name (maps to `company`) | `Example Corp` |
+| `department` | text | No | Department name (maps to `department`) | `Engineering` |
+| `title` | text | No | Job title (maps to `title`) | `Software Engineer` |
+| `enabled` | boolean | No | Whether the account is enabled (default: `false`) | `true` |
+| `password` | text | No | Initial password (encoded as `unicodePwd`; requires LDAPS) | `P@ssw0rd!` |
+| `changePasswordAtNextLogin` | boolean | No | Whether the user must change their password at next login (default: `false`; sets `pwdLastSet` to `0`) | `true` |
+| `additionalAttributes` | object | No | Key-value pairs of additional LDAP attributes to set | `{"telephoneNumber": "+1-555-0100", "physicalDeliveryOfficeName": "Building A"}` |
+| `successIfAlreadyExists` | boolean | No | If `true`, return success when user already exists instead of throwing an error (default: `false`) | `true` |
+| `address` | text | No | Optional LDAP server URL override | `ldaps://ad.corp.example.com:636` |
 
 ### Output
 
@@ -251,27 +251,57 @@ This action uses the LDAP `add` operation to create a new directory entry. The e
 
 ## Development
 
+### Setup
+
 ```bash
-# Install dependencies
 npm install
+```
 
-# Run unit tests
+### Run tests
+
+```bash
 npm test
+```
 
-# Run tests in watch mode
+### Run tests in watch mode
+
+```bash
 npm run test:watch
+```
 
-# Build distribution bundle
+### Build
+
+```bash
 npm run build
+```
 
-# Validate metadata
+### Validate metadata
+
+```bash
 npm run validate
+```
 
-# Lint code
+### Lint
+
+```bash
 npm run lint
 npm run lint:fix
+```
 
-# Run locally with mock data
+### Local testing
+
+Create a `../.env` file with your AD credentials:
+
+```
+AD_ADDRESS=ldap://your-dc.example.com:389
+LDAP_BIND_DN=CN=admin,DC=example,DC=com
+LDAP_BIND_PASSWORD=your-password
+TLS_SKIP_VERIFY=false
+```
+
+Then run:
+
+```bash
 npm run dev
 ```
 
@@ -311,5 +341,6 @@ npm run dev
 
 ## Support
 
-- [SGNL Documentation](https://docs.sgnl.ai)
-- [GitHub Issues](https://github.com/sgnl-actions/ad-create-user/issues)
+- [ldapts Documentation](https://github.com/ldapts/ldapts)
+- [Active Directory LDAP Reference](https://docs.microsoft.com/en-us/windows/win32/ad/active-directory-domain-services)
+- [SGNL Actions Documentation](https://github.com/sgnl-actions)
