@@ -39,11 +39,12 @@ const PARAM_TO_LDAP = {
  * @throws {Error} If DN doesn't start with CN=
  */
 function extractCN(dn) {
-  const match = dn.match(/^CN=([^,]+)/i);
+  const match = dn.match(/^CN=((?:[^\\,]|\\.)+)/i);
   if (!match) {
     throw new Error('userDN must start with CN= (e.g., CN=John Doe,OU=Users,DC=example,DC=com)');
   }
-  return match[1];
+  // Unescape DN escape sequences to get the raw CN value
+  return match[1].replace(/\\(.)/g, '$1');
 }
 
 /**
