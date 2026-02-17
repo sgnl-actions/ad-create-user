@@ -553,6 +553,97 @@ describe('AD Create User Script', () => {
     });
   });
 
+  describe('special characters in attributes', () => {
+    test('should handle apostrophe in lastName (O\'Shea)', async () => {
+      const params = {
+        userDN: "CN=Patrick O'Shea,OU=Users,DC=example,DC=com",
+        samAccountName: 'poshea',
+        lastName: "O'Shea"
+      };
+
+      const result = await script.invoke(params, mockContext);
+
+      expect(result.status).toBe('success');
+      expect(mockAdd).toHaveBeenCalledWith(
+        "CN=Patrick O'Shea,OU=Users,DC=example,DC=com",
+        expect.objectContaining({
+          cn: "Patrick O'Shea",
+          sn: "O'Shea"
+        })
+      );
+    });
+
+    test('should handle dashes in department (team - engineering)', async () => {
+      const params = {
+        userDN: 'CN=John Doe,OU=Users,DC=example,DC=com',
+        samAccountName: 'jdoe',
+        department: 'team - engineering'
+      };
+
+      const result = await script.invoke(params, mockContext);
+
+      expect(result.status).toBe('success');
+      expect(mockAdd).toHaveBeenCalledWith(
+        'CN=John Doe,OU=Users,DC=example,DC=com',
+        expect.objectContaining({
+          department: 'team - engineering'
+        })
+      );
+    });
+
+    test('should handle forward slash in title', async () => {
+      const params = {
+        userDN: 'CN=John Doe,OU=Users,DC=example,DC=com',
+        samAccountName: 'jdoe',
+        title: 'Sales/Marketing Lead'
+      };
+
+      const result = await script.invoke(params, mockContext);
+
+      expect(result.status).toBe('success');
+      expect(mockAdd).toHaveBeenCalledWith(
+        'CN=John Doe,OU=Users,DC=example,DC=com',
+        expect.objectContaining({
+          title: 'Sales/Marketing Lead'
+        })
+      );
+    });
+
+    test('should extract CN with escaped comma in DN', async () => {
+      const params = {
+        userDN: 'CN=Doe\\, John,OU=Users,DC=example,DC=com',
+        samAccountName: 'jdoe'
+      };
+
+      const result = await script.invoke(params, mockContext);
+
+      expect(result.status).toBe('success');
+      expect(mockAdd).toHaveBeenCalledWith(
+        'CN=Doe\\, John,OU=Users,DC=example,DC=com',
+        expect.objectContaining({
+          cn: 'Doe, John'
+        })
+      );
+    });
+
+    test('should extract CN with escaped backslash in DN', async () => {
+      const params = {
+        userDN: 'CN=Test\\\\User,OU=Users,DC=example,DC=com',
+        samAccountName: 'tuser'
+      };
+
+      const result = await script.invoke(params, mockContext);
+
+      expect(result.status).toBe('success');
+      expect(mockAdd).toHaveBeenCalledWith(
+        'CN=Test\\\\User,OU=Users,DC=example,DC=com',
+        expect.objectContaining({
+          cn: 'Test\\User'
+        })
+      );
+    });
+  });
+
   describe('error handler', () => {
     test('should re-throw connection errors for framework retry', async () => {
       const error = new Error('LDAP connection failed');
