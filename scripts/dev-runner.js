@@ -15,15 +15,15 @@ import script from '../src/script.mjs';
 const mockContext = {
   environment: {
     ADDRESS: process.env.AD_ADDRESS || 'ldap://localhost:389',
-    TLS_SKIP_VERIFY: process.env.TLS_SKIP_VERIFY || 'false',
+    TLS_SKIP_VERIFY: process.env.TLS_SKIP_VERIFY || 'false'
   },
   secrets: {
     LDAP_BIND_DN: process.env.LDAP_BIND_DN || '',
-    LDAP_BIND_PASSWORD: process.env.LDAP_BIND_PASSWORD || '',
+    LDAP_BIND_PASSWORD: process.env.LDAP_BIND_PASSWORD || ''
   },
   outputs: {},
   partial_results: {},
-  current_step: 'start',
+  current_step: 'start'
 };
 
 // Action-specific parameters - customize these for your test
@@ -39,9 +39,9 @@ const mockParams = {
   // password: 'SecurePassword123!',
   enabled: false,  // Create disabled first, then enable with enable-user action
   additionalAttributes: {
-    telephoneNumber: '+1-555-0100',
+    telephoneNumber: '+1-555-0100'
   },
-  dry_run: process.env.DRY_RUN === 'true',
+  dry_run: process.env.DRY_RUN === 'true'
 };
 
 async function runDev() {
@@ -76,7 +76,7 @@ async function runDev() {
     if (script.error) {
       console.log('\nAttempting error recovery...');
       try {
-        const recovery = await script.error({...mockParams, error}, mockContext);
+        const recovery = await script.error({ ...mockParams, error }, mockContext);
         console.log('Recovery successful!');
         console.log('Recovery result:', JSON.stringify(recovery, null, 2));
       } catch (recoveryError) {
