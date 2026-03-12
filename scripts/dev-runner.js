@@ -28,19 +28,12 @@ const mockContext = {
 
 // Action-specific parameters - customize these for your test
 const mockParams = {
-  userDN: 'CN=John Smith,OU=Users,DC=corp,DC=example,DC=com',
+  userDN: 'CN=John Smith,OU=Users,OU=adaptertest,DC=adaptertest,DC=sgnl,DC=ai',
   samAccountName: 'jsmith',
-  firstName: 'John',
-  lastName: 'Smith',
-  email: 'john.smith@example.com',
-  department: 'Engineering',
-  title: 'Software Engineer',
   // Note: password requires LDAPS connection - omit for plain LDAP
   // password: 'SecurePassword123!',
   enabled: false,  // Create disabled first, then enable with enable-user action
-  additionalAttributes: {
-    telephoneNumber: '+1-555-0100'
-  },
+  successIfAlreadyExists: true,
   dry_run: process.env.DRY_RUN === 'true'
 };
 

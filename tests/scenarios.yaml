@@ -1,0 +1,138 @@
+action:
+  params:
+    userDN: "CN=John Smith,OU=Users,OU=adaptertest,DC=adaptertest,DC=sgnl,DC=ai"
+    samAccountName: jsmith
+    enabled: false
+  context:
+    secrets:
+      LDAP_BIND_DN: "CN=svc-sgnl,OU=Service Accounts,DC=adaptertest,DC=sgnl,DC=ai"
+      LDAP_BIND_PASSWORD: test-password
+    environment:
+      ADDRESS: "ldap://ad.corp.example.com:389"
+
+scenarios:
+  - name: successfully creates user
+    steps:
+      - ldap:
+          operation: bind
+          bindDN: "CN=svc-sgnl,OU=Service Accounts,DC=adaptertest,DC=sgnl,DC=ai"
+          password: "[MASKED]"
+        fixture: fixtures/200-bind-success.ldap
+      - ldap:
+          operation: add
+          dn: "CN=John Smith,OU=Users,OU=adaptertest,DC=adaptertest,DC=sgnl,DC=ai"
+        fixture: fixtures/200-add-success.ldap
+      - ldap:
+          operation: unbind
+        fixture: fixtures/200-unbind-success.ldap
+    invoke:
+      returns:
+        status: success
+        userDN: "CN=John Smith,OU=Users,OU=adaptertest,DC=adaptertest,DC=sgnl,DC=ai"
+        created: true
+        alreadyExisted: false
+        attributes:
+          - sAMAccountName
+        address: "ldap://ad.corp.example.com:389"
+
+  - name: user already exists (idempotent with successIfAlreadyExists)
+    params:
+      successIfAlreadyExists: true
+    steps:
+      - ldap:
+          operation: bind
+          bindDN: "CN=svc-sgnl,OU=Service Accounts,DC=adaptertest,DC=sgnl,DC=ai"
+          password: "[MASKED]"
+        fixture: fixtures/200-bind-success.ldap
+      - ldap:
+          operation: add
+          dn: "CN=John Smith,OU=Users,OU=adaptertest,DC=adaptertest,DC=sgnl,DC=ai"
+        fixture: fixtures/68-already-exists.ldap
+      - ldap:
+          operation: unbind
+        fixture: fixtures/200-unbind-success.ldap
+    invoke:
+      returns:
+        status: success
+        userDN: "CN=John Smith,OU=Users,OU=adaptertest,DC=adaptertest,DC=sgnl,DC=ai"
+        created: false
+        alreadyExisted: true
+        attributes:
+          - sAMAccountName
+        address: "ldap://ad.corp.example.com:389"
+
+  - name: user already exists (throws without successIfAlreadyExists)
+    params:
+      successIfAlreadyExists: false
+    steps:
+      - ldap:
+          operation: bind
+          bindDN: "CN=svc-sgnl,OU=Service Accounts,DC=adaptertest,DC=sgnl,DC=ai"
+          password: "[MASKED]"
+        fixture: fixtures/200-bind-success.ldap
+      - ldap:
+          operation: add
+          dn: "CN=John Smith,OU=Users,OU=adaptertest,DC=adaptertest,DC=sgnl,DC=ai"
+        fixture: fixtures/68-already-exists.ldap
+      - ldap:
+          operation: unbind
+        fixture: fixtures/200-unbind-success.ldap
+    invoke:
+      throws: "ENTRY_ALREADY_EXISTS"
+
+  - name: authentication failed
+    steps:
+      - ldap:
+          operation: bind
+          bindDN: "CN=svc-sgnl,OU=Service Accounts,DC=adaptertest,DC=sgnl,DC=ai"
+          password: "[MASKED]"
+        fixture: fixtures/49-invalid-credentials.ldap
+      - ldap:
+          operation: unbind
+        fixture: fixtures/200-unbind-success.ldap
+    invoke:
+      throws: "INVALID_CREDENTIALS"
+
+  - name: insufficient permissions
+    steps:
+      - ldap:
+          operation: bind
+          bindDN: "CN=svc-sgnl,OU=Service Accounts,DC=adaptertest,DC=sgnl,DC=ai"
+          password: "[MASKED]"
+        fixture: fixtures/200-bind-success.ldap
+      - ldap:
+          operation: add
+          dn: "CN=John Smith,OU=Users,OU=adaptertest,DC=adaptertest,DC=sgnl,DC=ai"
+        fixture: fixtures/50-insufficient-access.ldap
+      - ldap:
+          operation: unbind
+        fixture: fixtures/200-unbind-success.ldap
+    invoke:
+      throws: "INSUFFICIENT_ACCESS_RIGHTS"
+
+  - name: dry run mode
+    params:
+      dry_run: true
+    steps: []
+    invoke:
+      returns:
+        status: dry_run_completed
+        userDN: "CN=John Smith,OU=Users,OU=adaptertest,DC=adaptertest,DC=sgnl,DC=ai"
+        created: false
+        attributes:
+          - sAMAccountName
+        enabled: false
+
+  - name: missing userDN
+    params:
+      userDN: ""
+    steps: []
+    invoke:
+      throws: "userDN is required"
+
+  - name: missing samAccountName
+    params:
+      samAccountName: ""
+    steps: []
+    invoke:
+      throws: "samAccountName is required to create an AD user"
