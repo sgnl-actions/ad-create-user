@@ -12,7 +12,7 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "validate": "sgnl-validate",
-    "dev": "node scripts/dev-runner.js"
+    "dev": "node --env-file=.env scripts/dev-runner.js"
   },
   "keywords": [
     "sgnl",
