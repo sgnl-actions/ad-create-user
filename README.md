@@ -4,9 +4,15 @@ Create a new user in on-premise Active Directory via LDAP/LDAPS.
 
 ## Overview
 
-This action creates a new user object in Active Directory using the LDAP `add` operation via the `ldapts` library. It automatically sets the required AD object classes (`top`, `person`, `organizationalPerson`, `user`), extracts the `cn` from the provided DN, and configures the account state via `userAccountControl`.
+This action creates a new user object in Active Directory using the LDAP `add` operation via the `ldapts` library. It automatically sets the required AD object classes (`top`, `person`, `organizationalPerson`, `user`), extracts the `cn` from the provided DN, and configures the account state via `userAccountControl`. The action supports comprehensive error handling through the enhanced SGNL testing framework.
 
-Supports setting any combination of standard AD user attributes and an optional initial password in a single call.
+Key capabilities:
+- **Flexible attribute mapping**: Set standard AD attributes via friendly parameter names or arbitrary attributes via `additionalAttributes`
+- **Password management**: Set initial password (requires LDAPS) and optionally force password change at next login
+- **Account state control**: Create accounts as enabled (`userAccountControl: 512`) or disabled (`514`)
+- **Idempotent operations**: Optional `successIfAlreadyExists` flag treats duplicate creation as success
+- **Dry run mode**: Validate parameters without making changes to Active Directory
+- **Comprehensive testing**: Scenario-based testing framework with full ldapts mocking and 8 test scenarios
 
 ## Prerequisites
 
@@ -259,9 +265,19 @@ npm install
 
 ### Run tests
 
+This action uses the enhanced SGNL testing framework with comprehensive LDAP mocking support. All 8 test scenarios validate user creation, idempotency, error handling, and dry run behavior:
+
 ```bash
 npm test
 ```
+
+The test suite includes:
+- Successful user creation with attribute mapping
+- Idempotent creation with `successIfAlreadyExists` flag
+- Already-exists error when flag is not set
+- Authentication and permission failure handling
+- Dry run validation
+- Missing required parameter validation
 
 ### Run tests in watch mode
 
@@ -290,13 +306,26 @@ npm run lint:fix
 
 ### Local testing
 
-Create a `../.env` file with your AD credentials:
+Copy the sample environment file and configure with your AD credentials:
+
+```bash
+cp .env.sample .env
+```
+
+Then edit `.env` with your actual values:
 
 ```
 AD_ADDRESS=ldap://your-dc.example.com:389
 LDAP_BIND_DN=CN=admin,DC=example,DC=com
 LDAP_BIND_PASSWORD=your-password
 TLS_SKIP_VERIFY=false
+
+# Test parameters - customize as needed
+USER_DN=CN=John Smith,OU=Users,DC=corp,DC=example,DC=com
+SAM_ACCOUNT_NAME=jsmith
+ENABLED=false
+SUCCESS_IF_ALREADY_EXISTS=true
+DRY_RUN=false
 ```
 
 Then run:
@@ -341,6 +370,7 @@ npm run dev
 
 ## Support
 
-- [ldapts Documentation](https://github.com/ldapts/ldapts)
+- [ldapts Documentation](https://github.com/ldapts/ldapts) - LDAP client library used for Active Directory operations
+- [SGNL Testing Framework](https://github.com/sgnl-actions/testing) - Enhanced testing with LDAP mocking capabilities
 - [Active Directory LDAP Reference](https://docs.microsoft.com/en-us/windows/win32/ad/active-directory-domain-services)
 - [SGNL Actions Documentation](https://github.com/sgnl-actions)
