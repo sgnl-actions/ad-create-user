@@ -50,7 +50,11 @@ async function runDev() {
     process.exit(1);
   }
 
-  console.log('Parameters:', JSON.stringify(mockParams, null, 2));
+  console.log('Parameters:', JSON.stringify({
+    ...mockParams,
+    // Redact any sensitive fields from logs
+    password: mockParams.password ? '***' : undefined
+  }, null, 2));
   console.log('Context:', JSON.stringify({
     ...mockContext,
     secrets: { LDAP_BIND_DN: mockContext.secrets.LDAP_BIND_DN, LDAP_BIND_PASSWORD: '***' }
