@@ -50,20 +50,7 @@ async function runDev() {
     process.exit(1);
   }
 
-  const loggedParams = {
-    userDN: mockParams.userDN,
-    samAccountName: mockParams.samAccountName,
-    enabled: mockParams.enabled,
-    successIfAlreadyExists: mockParams.successIfAlreadyExists,
-    dry_run: mockParams.dry_run,
-    password: mockParams.password ? '***' : undefined
-  };
-  console.log('Parameters:', JSON.stringify(loggedParams, null, 2));
-  console.log('Context:', JSON.stringify({
-    environment: mockContext.environment,
-    secrets: { LDAP_BIND_DN: mockContext.secrets.LDAP_BIND_DN, LDAP_BIND_PASSWORD: '***' }
-  }, null, 2));
-  console.log('\n' + '='.repeat(50) + '\n');
+  console.log('='.repeat(50) + '\n');
 
   try {
     const result = await script.invoke(mockParams, mockContext);
