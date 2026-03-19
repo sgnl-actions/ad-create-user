@@ -1,5 +1,7 @@
+import json from '@rollup/plugin-json';
 import { createConfig } from '@sgnl-actions/rollup-config';
 
 export default createConfig({
-  external: ['ldapts']
+  inlineDynamicImports: true,
+  plugins: [json()]
 });

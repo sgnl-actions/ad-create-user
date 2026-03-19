@@ -80,6 +80,7 @@ function buildAttributes(params) {
 /**
  * Safely disconnect from LDAP server.
  * Errors during unbind are logged but not thrown to avoid masking original errors.
+ * Guards against fd errors from partially-initialized connections.
  *
  * @param {Client} client - The ldapts client
  */
@@ -90,7 +91,12 @@ async function safeUnbind(client) {
   try {
     await client.unbind();
   } catch (unbindError) {
-    console.warn(`Warning: Error during LDAP unbind: ${unbindError.message}`);
+    // Suppress fd/socket errors from partially-initialized connections
+    const msg = unbindError?.message ?? '';
+    if (!msg.includes('fd') && !msg.includes('socket')) {
+      console.warn(`Warning: Error during LDAP unbind: ${msg}`);
+    }
+    // fd/socket errors are expected for failed connections, don't log them
   }
 }
 
@@ -205,10 +211,12 @@ export default {
     }
 
     const client = new Client(clientOptions);
+    let bound = false; // Track whether bind() succeeded
 
     try {
       console.log(`Connecting to LDAP server at ${address}`);
       await client.bind(bindDN, bindPassword);
+      bound = true; // Only set after successful bind
       console.log('Successfully authenticated to LDAP server');
 
       console.log(`Creating user: ${userDN}`);
@@ -240,7 +248,10 @@ export default {
       console.error(`Failed to create user: ${error.message}`);
       throw error;
     } finally {
-      await safeUnbind(client);
+      // Only unbind if we successfully bound to avoid fd errors
+      if (bound) {
+        await safeUnbind(client);
+      }
     }
   },
 
