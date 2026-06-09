@@ -69,9 +69,10 @@ inputs:
     required: false
 
   additionalAttributes:
-    type: text
+    type: object
     description: Object containing additional LDAP attribute names and values to set on the new user
     required: false
+    properties: {}
 
   dry_run:
     type: boolean
