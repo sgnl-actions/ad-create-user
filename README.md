@@ -34,7 +34,6 @@ Key capabilities:
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `ADDRESS` | LDAP/LDAPS URL of the Domain Controller (e.g., `ldaps://dc.example.com:636`) | Required |
-| `TLS_SKIP_VERIFY` | Set to `true` to skip TLS certificate verification | `false` |
 
 ### Input Parameters
 
@@ -56,6 +55,7 @@ Key capabilities:
 | `additionalAttributes` | object | No | Key-value pairs of additional LDAP attributes to set | `{"telephoneNumber": "+1-555-0100", "physicalDeliveryOfficeName": "Building A"}` |
 | `successIfAlreadyExists` | boolean | No | If `true`, return success when user already exists instead of throwing an error (default: `false`) | `true` |
 | `address` | text | No | Optional LDAP server URL override | `ldaps://ad.corp.example.com:636` |
+| `tlsSkipVerify` | boolean | No | Skip TLS certificate verification (use only for self-signed certificates) | `true` |
 
 ### Output
 
@@ -175,21 +175,19 @@ Named parameters can be combined with the `additionalAttributes` object for less
     "enabled": true
   },
   "environment": {
-    "ADDRESS": "ldaps://dc.example.com:636",
-    "TLS_SKIP_VERIFY": "false"
+    "ADDRESS": "ldaps://dc.example.com:636"
   }
 }
 ```
 
 ### Skip TLS Verification
 
-For development or self-signed certificate environments:
+For development or self-signed certificate environments, add `tlsSkipVerify` to your script inputs:
 
 ```json
 {
-  "environment": {
-    "ADDRESS": "ldaps://dc.dev.example.com:636",
-    "TLS_SKIP_VERIFY": "true"
+  "script_inputs": {
+    "tlsSkipVerify": true
   }
 }
 ```
@@ -251,7 +249,7 @@ This action uses the LDAP `add` operation to create a new directory entry. The e
 
 - Use LDAPS (port 636) in production to encrypt credentials and data in transit
 - LDAPS is **required** for setting the initial password (`unicodePwd`)
-- Only skip TLS verification (`TLS_SKIP_VERIFY=true`) in development environments
+- Only set \`tlsSkipVerify: true\` in development environments
 - The service account should have minimal permissions — only the ability to create user objects in the target OU
 - Attribute values are not logged; only attribute names appear in the output to avoid leaking sensitive data
 
@@ -318,7 +316,7 @@ Then edit `.env` with your actual values:
 AD_ADDRESS=ldap://your-dc.example.com:389
 LDAP_BIND_DN=CN=admin,DC=example,DC=com
 LDAP_BIND_PASSWORD=your-password
-TLS_SKIP_VERIFY=false
+TLS_SKIP_VERIFY=false  # Used as tlsSkipVerify input parameter
 
 # Test parameters - customize as needed
 USER_DN=CN=John Smith,OU=Users,DC=corp,DC=example,DC=com
@@ -340,7 +338,7 @@ npm run dev
 
 - Verify the Domain Controller is reachable: `telnet dc.example.com 636`
 - Check that the `ADDRESS` environment variable includes the protocol and port: `ldaps://dc.example.com:636`
-- For LDAPS, ensure the DC's certificate is trusted or set `TLS_SKIP_VERIFY=true` for testing
+- For LDAPS, ensure the DC's certificate is trusted or set `tlsSkipVerify: true` in inputs for testing
 
 ### Authentication Failures
 

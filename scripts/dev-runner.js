@@ -15,7 +15,6 @@ import script from '../src/script.mjs';
 const mockContext = {
   environment: {
     ADDRESS: process.env.ADDRESS || 'ldap://localhost:389',
-    TLS_SKIP_VERIFY: process.env.TLS_SKIP_VERIFY || 'false'
   },
   secrets: {
     BASIC_USERNAME: process.env.BASIC_USERNAME || '',
@@ -35,6 +34,7 @@ const mockParams = {
   enabled: process.env.ENABLED === 'true',
   successIfAlreadyExists: process.env.SUCCESS_IF_ALREADY_EXISTS !== 'false',
   dry_run: process.env.DRY_RUN === 'true'
+  tlsSkipVerify: process.env.TLS_SKIP_VERIFY === 'true'
 };
 
 async function runDev() {
